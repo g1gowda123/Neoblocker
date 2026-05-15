@@ -3,11 +3,14 @@ import type { PlasmoCSConfig } from "plasmo"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 
-import { analyzeContent } from "~utils/ai-router"
+// We now message the background script for analysis because WASM cannot run in MV3 content scripts.
 
 export const config: PlasmoCSConfig = {
   matches: ["https://www.youtube.com/*", "https://www.instagram.com/*"]
 }
+
+console.log("[Firewall] Content script injected and monitoring...");
+
 
 export const getStyle = (): HTMLStyleElement => {
   const baseFontSize = 16
@@ -105,28 +108,39 @@ const FirewallOverlay = ({ item, onReveal }: { item: BlockedItem; onReveal: () =
 const OverlayManager = () => {
   const [blockedItems, setBlockedItems] = useState<BlockedItem[]>([])
 
+  const processing = new Set<HTMLElement>()
+
   useEffect(() => {
     const processElement = async (target: HTMLElement) => {
-      if (target.dataset.firewallProcessed) return
-      target.dataset.firewallProcessed = "true"
+      if (target.dataset.firewallProcessed === "true" || processing.has(target)) return
 
       const text = target.textContent?.trim() || ""
       if (text.length < 10) return
 
-      try {
-        const { action } = await analyzeContent(text)
-        if (action !== "SAFE") {
-          target.style.position = "relative"
-          
-          // Apply blur to inner content so the portal overlay itself isn't blurred
-          const contentWrapper = target.querySelector('#content, .update-components-text, ._aabd') || target.children[0]
-          if (contentWrapper) {
-            (contentWrapper as HTMLElement).style.filter = "blur(15px)"
-            (contentWrapper as HTMLElement).style.transition = "filter 0.3s ease"
-          }
+      processing.add(target)
+      target.dataset.firewallProcessed = "true"
 
+      try {
+        const response = await chrome.runtime.sendMessage({ action: "analyze", text })
+        const { action, error } = response || { action: "SAFE" };
+        
+        if (error) {
+           console.error("[Firewall] Background AI Error:", error);
+        }
+        
+        console.log(`[Firewall] Analyzed target: ${action} - Text preview: ${text.substring(0, 30)}...`)
+        
+        if (action !== "SAFE") {
+          target.classList.add("firewall-blurred")
+          target.style.overflow = "visible" // Ensure overlay isn't clipped
+          
           const mountNode = document.createElement("div")
           mountNode.className = "plasmo-firewall-mount"
+          // Ensure it covers the whole relative parent
+          mountNode.style.position = "absolute"
+          mountNode.style.inset = "0"
+          mountNode.style.zIndex = "99999"
+          
           target.appendChild(mountNode)
 
           setBlockedItems((prev) => [
@@ -141,28 +155,43 @@ const OverlayManager = () => {
         }
       } catch (err) {
         console.error("Analysis error:", err)
+      } finally {
+        processing.delete(target)
       }
     }
 
     const observer = new MutationObserver((mutations) => {
+      const targetsToProcess = new Set<HTMLElement>()
+
       mutations.forEach((mutation) => {
+        // Catch direct additions or text changes inside target elements
+        const target = (mutation.target as HTMLElement).closest?.('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
+        if (target) {
+          targetsToProcess.add(target as HTMLElement)
+        }
+
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const el = node as HTMLElement
-            const targets = Array.from(el.querySelectorAll('ytd-rich-item-renderer, article, div[role="dialog"]'))
-            if (el.matches?.('ytd-rich-item-renderer, article, div[role="dialog"]')) {
-              targets.push(el)
+            // If the added node is inside a target
+            const closestTarget = el.closest?.('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
+            if (closestTarget) {
+              targetsToProcess.add(closestTarget as HTMLElement)
             }
-            targets.forEach(t => processElement(t as HTMLElement))
+            // If the added node contains targets
+            const innerTargets = el.querySelectorAll?.('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
+            innerTargets?.forEach(t => targetsToProcess.add(t as HTMLElement))
           }
         })
       })
+
+      targetsToProcess.forEach(t => processElement(t))
     })
 
-    const existing = document.querySelectorAll('ytd-rich-item-renderer, article, div[role="dialog"]')
+    const existing = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
     existing.forEach(t => processElement(t as HTMLElement))
 
-    observer.observe(document.body, { childList: true, subtree: true })
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
 
     return () => observer.disconnect()
   }, [])
@@ -172,10 +201,8 @@ const OverlayManager = () => {
     
     const target = mountNode.parentElement
     if (target) {
-      const contentWrapper = target.querySelector('#content, .update-components-text, ._aabd') || target.children[0]
-      if (contentWrapper) {
-        (contentWrapper as HTMLElement).style.filter = "none"
-      }
+      target.classList.remove("firewall-blurred")
+      target.style.overflow = ""
       mountNode.remove()
     }
   }

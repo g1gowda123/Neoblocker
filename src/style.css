@@ -1,8 +1,17 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.firewall-blurred {
+  position: relative !important;
+}
+
+/* Blur everything inside the target except our overlay mount */
+.firewall-blurred > *:not(.plasmo-firewall-mount) {
+  filter: blur(30px) !important;
+  pointer-events: none !important;
+  transition: filter 0.5s ease-out !important;
+}
 
 #plasmo-shadow-container {
   all: initial;

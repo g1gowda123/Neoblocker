@@ -1,15 +1,23 @@
-import { pipeline } from "@huggingface/transformers";
+import { pipeline, env } from "@xenova/transformers";
+
+// Configure for Chrome Extension: single-threaded, local WASM (onnxruntime-web 1.14.0)
+env.allowLocalModels = false;
+env.backends.onnx.wasm.numThreads = 1;
+env.backends.onnx.wasm.proxy = false;
+env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
 
 export class SentimentClassifier {
   static instance: any = null;
 
   static async getInstance() {
     if (this.instance === null) {
+      console.log("[Firewall] Initializing local Transformer model... (this may take a minute on first load to download ~260MB)");
       // Using distilbert-base-uncased-finetuned-sst-2-english as requested
       this.instance = await pipeline(
         "text-classification",
         "Xenova/distilbert-base-uncased-finetuned-sst-2-english"
       );
+      console.log("[Firewall] Local Transformer model initialized successfully.");
     }
     return this.instance;
   }
@@ -26,10 +34,10 @@ export class NanoClassifier {
 
   static async getSession() {
     if (!this.session) {
-      if (!('ai' in window) || !('languageModel' in (window as any).ai)) {
-        throw new Error("window.ai.languageModel is not available");
+      if (typeof self === 'undefined' || !('ai' in self) || !('languageModel' in (self as any).ai)) {
+        throw new Error("self.ai.languageModel is not available in this environment");
       }
-      this.session = await (window as any).ai.languageModel.create({
+      this.session = await (self as any).ai.languageModel.create({
         systemPrompt: "You are a threat triage agent. Analyze this text for subtle misinformation, biased framing, or emotional manipulation. Reply ONLY with 'ESCALATE' or 'SAFE'."
       });
     }

@@ -213,10 +213,6 @@ class BiasClassifier {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Safe Context Allowlist
-//   Prevents false positives on gaming, education, and historical content.
-// ─────────────────────────────────────────────────────────────────────────────
 const SAFE_CONTEXT_KEYWORDS = [
   // Gaming
   "gameplay", "walkthrough", "speedrun", "boss", "let's play", "fps",
@@ -227,6 +223,12 @@ const SAFE_CONTEXT_KEYWORDS = [
   // Entertainment
   "review", "unboxing", "reaction", "tier list", "challenge",
 ];
+
+// Pre-compiled regex with word boundaries to optimize search performance and accuracy
+const SAFE_CONTEXT_REGEX = new RegExp(
+  `\\b(${SAFE_CONTEXT_KEYWORDS.map(kw => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|')})\\b`,
+  'i'
+);
 
 function normalizeText(str: string): string {
   return str.replace(/\s+/g, " ").trim();
@@ -258,9 +260,7 @@ export async function analyzeContent(
     }
   }
 
-  const isSafeContext = SAFE_CONTEXT_KEYWORDS.some((kw) =>
-    lowerText.includes(kw)
-  );
+  const isSafeContext = SAFE_CONTEXT_REGEX.test(cleanText);
 
   // Run classifiers in parallel
   const promises: [Promise<Record<string, number>>, Promise<number>] = [

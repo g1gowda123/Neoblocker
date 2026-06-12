@@ -216,15 +216,15 @@ function IndexPopup() {
               <div className="plasmo-space-y-2">
                 <div className="plasmo-flex plasmo-items-center plasmo-justify-between plasmo-text-xs">
                   <span className={secTextColor}>Racism & Hate Speech Sensitivity</span>
-                  <span className="plasmo-font-medium plasmo-font-mono">{(0.55 - racismThreshold).toFixed(2)}</span>
+                  <span className="plasmo-font-medium plasmo-font-mono">{(1.05 - racismThreshold).toFixed(2)}</span>
                 </div>
                 <input
                   type="range"
                   min="0.05"
-                  max="0.50"
+                  max="1.00"
                   step="0.05"
-                  value={(0.55 - racismThreshold)}
-                  onChange={(e) => handleRacismThresholdChange(parseFloat((0.55 - parseFloat(e.target.value)).toFixed(2)))}
+                  value={(1.05 - racismThreshold)}
+                  onChange={(e) => handleRacismThresholdChange(parseFloat((1.05 - parseFloat(e.target.value)).toFixed(2)))}
                   className={`plasmo-w-full plasmo-h-1 plasmo-bg-[#dadce0] dark:plasmo-bg-[#3c4043] plasmo-rounded-lg plasmo-appearance-none plasmo-cursor-pointer ${sliderAccent} plasmo-outline-none`}
                 />
               </div>

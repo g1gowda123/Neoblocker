@@ -12,7 +12,8 @@
     "package": "plasmo package",
     "copy-wasm:dev": "mkdir -p build/chrome-mv3-dev/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/chrome-mv3-dev/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/chrome-mv3-dev/wasm/ && echo [copy-wasm:dev] done.",
     "copy-wasm:chrome": "mkdir -p build/chrome-mv3-prod/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/chrome-mv3-prod/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/chrome-mv3-prod/wasm/ && echo [copy-wasm:chrome] done.",
-    "copy-wasm:firefox": "mkdir -p build/firefox-mv3-prod/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/firefox-mv3-prod/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/firefox-mv3-prod/wasm/ && echo [copy-wasm:firefox] done."
+    "copy-wasm:firefox": "mkdir -p build/firefox-mv3-prod/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/firefox-mv3-prod/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/firefox-mv3-prod/wasm/ && echo [copy-wasm:firefox] done.",
+    "test": "vitest run"
   },
   "dependencies": {
     "@xenova/transformers": "^2.17.2",
@@ -29,7 +30,8 @@
     "@types/react-dom": "18.2.18",
     "postcss": "8.4.33",
     "prettier": "3.2.4",
-    "typescript": "5.3.3"
+    "typescript": "5.3.3",
+    "vitest": "^4.1.8"
   },
   "manifest": {
     "name": "Neoblocker — Cognitive Defense Firewall",

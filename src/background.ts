@@ -14,7 +14,7 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#39;/g, "'");
 }
 
-async function fetchVideoData(videoId: string): Promise<{ text: string }> {
+async function fetchVideoData(videoId: string): Promise<{ title: string; deepText: string }> {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     const res = await fetch(url);
@@ -23,7 +23,7 @@ async function fetchVideoData(videoId: string): Promise<{ text: string }> {
     // 1. Get player response JSON
     const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
     if (!playerResponseMatch) {
-      return { text: "" };
+      return { title: "", deepText: "" };
     }
     const playerResponse = JSON.parse(playerResponseMatch[1]);
     const videoDetails = playerResponse.videoDetails || {};

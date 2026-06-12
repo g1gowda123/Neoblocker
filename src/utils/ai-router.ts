@@ -10,7 +10,9 @@ import type { ExtensionSettings } from "./storage";
 env.allowLocalModels = false;
 env.backends.onnx.wasm.numThreads = 1;
 env.backends.onnx.wasm.proxy = false;
-env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
+if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model status broadcasting — lets the popup know if models are loading
@@ -55,31 +57,60 @@ const TOXICITY_REASON_MAP: Record<string, string> = {
   sexual_explicit: "Explicit Content",
 };
 
+export class NanoClassifier {
+  static sessionPromise: Promise<any> | null = null;
+
+  static async getSession() {
+    if (!this.sessionPromise) {
+      this.sessionPromise = (window as any).ai.createTextSession();
+    }
+    return this.sessionPromise;
+  }
+
+  static async analyze(text: string) {
+    try {
+      const session = await this.getSession();
+      const response = await session.prompt(text);
+      return response.trim().toUpperCase();
+    } catch (error) {
+      console.error("NanoClassifier error:", error);
+      return "SAFE";
+    }
+  }
+}
+
 class ToxicityClassifier {
   static instance: ReturnType<typeof pipeline> | null = null;
+  private static cache = new Map<string, Record<string, number>>();
+  private static initializationPromise: Promise<any> | null = null;
 
   static async getInstance() {
-    if (!this.instance) {
+    if (this.instance) return this.instance;
+
+    if (!this.initializationPromise) {
       console.log("[Neoblocker] Loading Toxicity model on CPU (WASM)...");
       modelStatuses.toxicity = "loading";
       broadcastStatus();
-      try {
-        this.instance = pipeline("text-classification", TOXICITY_MODEL, {
-          model_file_name: "../model"
-        });
-        await this.instance;
+
+      this.initializationPromise = pipeline("text-classification", TOXICITY_MODEL, {
+        model_file_name: "../model"
+      }).then(pipe => {
+        this.instance = pipe as any;
         console.log("[Neoblocker] Toxicity model loaded.");
         modelStatuses.toxicity = "loaded";
         broadcastStatus();
-      } catch (err) {
+        return this.instance;
+      }).catch(err => {
         console.error("[Neoblocker] Failed to load Toxicity model:", err);
         modelStatuses.toxicity = "error";
         broadcastStatus();
         this.instance = null;
+        this.initializationPromise = null;
         throw err;
-      }
+      });
     }
-    return this.instance;
+
+    return this.initializationPromise;
   }
 
   static unload() {
@@ -89,6 +120,10 @@ class ToxicityClassifier {
   }
 
   static async analyze(text: string): Promise<Record<string, number>> {
+    if (this.cache.has(text)) {
+      return this.cache.get(text)!;
+    }
+
     const classifier = await this.getInstance();
     // Pass topk as a runtime inference option (not top_k) to get all label scores
     const results = (await (classifier as any)(text.slice(0, 512), { topk: 16 })) as Array<{ label: string; score: number }>;
@@ -97,6 +132,14 @@ class ToxicityClassifier {
     for (const r of results) {
       scores[r.label] = r.score;
     }
+
+    // Limit cache size to prevent memory leaks in long sessions
+    if (this.cache.size > 1000) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+    this.cache.set(text, scores);
+
     return scores;
   }
 }
@@ -112,29 +155,36 @@ const BIAS_THRESHOLD = 0.50;
 
 class BiasClassifier {
   static instance: ReturnType<typeof pipeline> | null = null;
+  private static cache = new Map<string, number>();
+  private static initializationPromise: Promise<any> | null = null;
 
   static async getInstance() {
-    if (!this.instance) {
+    if (this.instance) return this.instance;
+
+    if (!this.initializationPromise) {
       console.log("[Neoblocker] Loading Bias model on CPU (WASM)...");
       modelStatuses.bias = "loading";
       broadcastStatus();
-      try {
-        this.instance = pipeline("text-classification", BIAS_MODEL, {
-          model_file_name: "../model"
-        });
-        await this.instance;
+
+      this.initializationPromise = pipeline("text-classification", BIAS_MODEL, {
+        model_file_name: "../model"
+      }).then(pipe => {
+        this.instance = pipe as any;
         console.log("[Neoblocker] Bias model loaded.");
         modelStatuses.bias = "loaded";
         broadcastStatus();
-      } catch (err) {
+        return this.instance;
+      }).catch(err => {
         console.error("[Neoblocker] Failed to load Bias model:", err);
         modelStatuses.bias = "error";
         broadcastStatus();
         this.instance = null;
+        this.initializationPromise = null;
         throw err;
-      }
+      });
     }
-    return this.instance;
+
+    return this.initializationPromise;
   }
 
   static unload() {
@@ -144,10 +194,22 @@ class BiasClassifier {
   }
 
   static async analyze(text: string): Promise<number> {
+    if (this.cache.has(text)) {
+      return this.cache.get(text)!;
+    }
+
     const classifier = await this.getInstance();
     const results = (await (classifier as any)(text.slice(0, 512))) as Array<{ label: string; score: number }>;
     const result = results[0];
-    return (result && result.label === "BIASED") ? result.score : 0;
+    const biasScore = (result && result.label === "BIASED") ? result.score : 0;
+
+    if (this.cache.size > 1000) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+    this.cache.set(text, biasScore);
+
+    return biasScore;
   }
 }
 

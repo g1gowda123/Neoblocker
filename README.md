@@ -1,22 +1,35 @@
 # Neoblocker — Cognitive Defense Firewall
 
-Neoblocker is a privacy-first, fully offline Manifest V3 browser extension that acts as an intelligent content firewall. It detects and blocks toxic content, hate speech, clickbait, and media bias in real time directly within the browser using WebAssembly-based Machine Learning models. No user data or scanned text ever leaves the local device.
+Neoblocker is a privacy-first, fully offline Manifest V3 browser extension that acts as an intelligent content firewall. Instead of relying on static blocklists, this extension runs local AI models to analyze page text and dynamically filter out unwanted content (toxicity, hate speech, clickbait, and media bias) before you see it. No user data or scanned text ever leaves the local device.
 
 ---
 
 ## 🚀 Key Features
 
-* **Fully Local Inference**: Leverages ONNX Runtime Web via Transformers.js to execute NLP models directly in the browser's extension context.
+* **Fully Local Inference**: Leverages ONNX Runtime Web via Transformers.js to execute NLP models entirely within the browser's extension context.
+* **Shadow DOM Isolation**: Renders the extension UI using React's `createPortal` into a Shadow DOM, preventing the extension's CSS from leaking into or being overwritten by the host page.
+* **Dynamic CSS Scoping**: Transforms Tailwind CSS on the fly by replacing `:root` selectors with `:host(plasmo-csui)` and converting `rem` units to `px` based on a 16px baseline.
 * **Cascaded Protection Filters**:
   * **Pass One (Fast-Scan)**: Instantly scans video titles and channels to apply quick blocking before full page rendering.
   * **Pass Two (Deep-Scan)**: Fetches and analyzes video descriptions, English subtitles, and comments in the background.
 * **Multi-Dimensional AI Classification**:
   * **Toxicity Classifier**: Analyzes text across multiple labels (toxicity, severe toxicity, obscenity, threats, insults, identity attack).
-  * **Bias & Clickbait Classifier**: Filters political slant, opinionated baiting, and sensationalized media framing.
+  * **Bias & Clickbait Classifier**: Filters political slant, opinionated baiting, and media framing.
 * **Contextual Allowlist & Exceptions**:
   * Employs a **Positivity Buffer** to avoid false positives on educational, historical, and gaming content.
   * Supports user-defined keyword bypass rules.
 * **Premium Warning Overlay**: Injects a custom React banner over violating content, utilizing backdrop-blur transitions (`filter: blur(15px)`) for a non-intrusive yet secure user interface.
+
+---
+
+## 🛠️ Tech Stack & Rationale
+
+I chose tools that make extension development predictable while keeping the UI flexible and robust:
+
+* **Plasmo**: Provides the build system and underlying architecture for the extension. It abstracts away a lot of boilerplate associated with manifest generation and hot-reloading.
+* **React**: Handles the state and rendering logic, especially crucial for managing complex, injected UI elements within the Shadow DOM.
+* **TailwindCSS**: Speeds up styling, with custom processing logic layered on top to prevent style conflicts with the websites the extension runs on.
+* **@xenova/transformers**: Enables running the machine learning models locally via WebAssembly, acting as the logic engine for the content filtering.
 
 ---
 
@@ -73,30 +86,28 @@ extension2/
 
 ---
 
-## 🛠️ Getting Started
+## 🛠️ Setup & Usage
 
-### Prerequisites
-* **Node.js** (v16.x or newer recommended)
-* **npm**
+To build and run the project locally, follow these steps:
 
-### Installation
+### 1. Installation
+Install all packages:
+```bash
+npm install
+```
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+### 2. Running the Dev Server
+Start the hot-reloading development server:
+```bash
+npm run dev
+```
+*This automatically copies the ONNX runtime `.wasm` files to the output directory and starts the Plasmo development server.*
 
-2. Start the hot-reloading development server:
-   ```bash
-   npm run dev
-   ```
-   *This automatically copies the ONNX runtime `.wasm` files to the output directory and starts the Plasmo development server.*
-
-3. Load the extension in Chrome:
-   - Go to `chrome://extensions/`
-   - Enable **Developer mode** (top right toggle)
-   - Click **Load unpacked** (top left button)
-   - Select the `build/chrome-mv3-dev` directory in your workspace.
+### 3. Loading the Extension in Chrome
+- Go to `chrome://extensions/`
+- Enable **Developer mode** (top right toggle)
+- Click **Load unpacked** (top left button)
+- Select the `build/chrome-mv3-dev` directory in your workspace.
 
 > [!NOTE]
 > On the very first run (or when visiting YouTube for the first time), the extension will take about 1-2 minutes to pull down and cache the local ONNX models. Once loaded, refresh the page and the offline protection will activate.
@@ -129,3 +140,9 @@ npm run package
 
 * **Zero Data Exfiltration**: All text analysis is processed locally using ONNX Runtime. Text payloads, video histories, and settings never leave your device.
 * **Strict CSP**: The extension complies with Manifest V3 Security Guidelines, configuring `wasm-unsafe-eval` specifically for offline local tensor math operations while disallowing remote script injection.
+
+---
+
+## 🤝 Disclosure
+
+I used some AI tools to help build this extension. A big shoutout to **google antigravity** and **jules** for helping me write code, solve bugs, and draft this documentation.

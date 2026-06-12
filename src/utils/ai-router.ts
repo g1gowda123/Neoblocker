@@ -242,7 +242,8 @@ export async function analyzeContent(
   settings: ExtensionSettings,
   isTitle: boolean = false
 ): Promise<{ action: "LOCAL_BLOCK" | "SAFE"; reason?: string }> {
-  const cleanText = normalizeText(text);
+  try {
+    const cleanText = normalizeText(text);
   if (cleanText.length < 12) return { action: "SAFE" };
   const lowerText = cleanText.toLowerCase();
 
@@ -252,7 +253,7 @@ export async function analyzeContent(
       .split(",")
       .map((kw) => kw.trim().toLowerCase())
       .filter((kw) => kw.length > 0);
-    
+
     const matchedKeyword = keywords.find((kw) => lowerText.includes(kw));
     if (matchedKeyword) {
       console.log(`[Neoblocker] Exception matched: "${matchedKeyword}". Bypassing analysis.`);
@@ -384,6 +385,10 @@ export async function analyzeContent(
   }
 
   return { action: "SAFE" };
+  } catch (error) {
+    console.error("Analysis pipeline failed:", error)
+    return { action: "SAFE" }
+  }
 }
 
 export function getModelStatuses(): ModelStatuses {

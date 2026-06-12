@@ -63,6 +63,11 @@ const FirewallOverlay = ({
         fontFamily: "Roboto, Arial, sans-serif",
         opacity: 0.97,
       }}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation()
+      }}
     >
       <svg
         style={{ width: 15, height: 15, marginBottom: 6, opacity: 0.35, color: sub }}
@@ -78,7 +83,12 @@ const FirewallOverlay = ({
         {item.reason}
       </span>
       <button
-        onClick={onReveal}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation()
+          onReveal()
+        }}
         style={{
           backgroundColor: btn,
           color: txt,
@@ -235,10 +245,14 @@ const OverlayManager = () => {
     if (el.dataset.neoblockerBlocked === "true") return
     if (filterModeRef.current === "remove") {
       applyRemoveStyle(el)
+      if (videoId) el.dataset.neoblockerVideoId = videoId
+      if (commentId) el.dataset.neoblockerCommentId = commentId
       return
     }
     // Blur mode
     applyBlurStyle(el)
+    if (videoId) el.dataset.neoblockerVideoId = videoId
+    if (commentId) el.dataset.neoblockerCommentId = commentId
     if (!el.querySelector(".plasmo-firewall-mount")) {
       const mountNode = createMountNode(el)
       const id = commentId || Math.random().toString(36).substring(7)
@@ -267,8 +281,9 @@ const OverlayManager = () => {
   const handleReveal = (videoId: string) => {
     revealedVideoIds.current.add(videoId)
     setBlockedItems((prev) => prev.filter((item) => item.videoId !== videoId))
-    document.querySelectorAll<HTMLElement>(CARD_SELECTORS).forEach((el) => {
-      if (getVideoId(el) === videoId) {
+    document.querySelectorAll<HTMLElement>('[data-neoblocker-blocked="true"]').forEach((el) => {
+      const elVideoId = el.dataset.neoblockerVideoId || el.dataset.neoblockerShortsId || getVideoId(el)
+      if (elVideoId === videoId) {
         el.classList.remove("firewall-blurred")
         el.removeAttribute("data-neoblocker-blocked")
         el.dataset.neoblockerRevealed = "true"
@@ -505,6 +520,7 @@ const OverlayManager = () => {
     const blockShortsPlayer = (el: HTMLElement, videoId: string, reason: string) => {
       if (revealedVideoIds.current.has(videoId)) return
       applyBlurStyle(el)
+      el.dataset.neoblockerVideoId = videoId
       if (!el.querySelector(".plasmo-firewall-mount")) {
         const mountNode = createMountNode(el)
         setBlockedItems((prev) => [

@@ -8,10 +8,19 @@ import type { ExtensionSettings } from "./storage"
 //   - Single-threaded: MV3 service workers do not support SharedArrayBuffer
 //   - Proxy disabled: no Worker nesting in service workers
 // ─────────────────────────────────────────────────────────────────────────────
+<<<<<<< HEAD
+env.allowLocalModels = false;
+env.backends.onnx.wasm.numThreads = 1;
+env.backends.onnx.wasm.proxy = false;
+if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
+}
+=======
 env.allowLocalModels = false
 env.backends.onnx.wasm.numThreads = 1
 env.backends.onnx.wasm.proxy = false
 env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/")
+>>>>>>> 26d73bf (🧪 fix: handle outer error path in analyzeContent and add unit tests)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model status broadcasting — lets the popup know if models are loading
@@ -56,7 +65,57 @@ const TOXICITY_REASON_MAP: Record<string, string> = {
   sexual_explicit: "Explicit Content"
 }
 
+export class NanoClassifier {
+  static async getSession() {
+    return (window as any).ai.createTextSession();
+  }
+
+  static async analyze(text: string) {
+    try {
+      const session = await this.getSession();
+      const response = await session.prompt(text);
+      return response.trim().toUpperCase();
+    } catch (error) {
+      console.error("NanoClassifier error:", error);
+      return "SAFE";
+    }
+  }
+}
+
 class ToxicityClassifier {
+<<<<<<< HEAD
+  static instance: ReturnType<typeof pipeline> | null = null;
+  private static cache = new Map<string, Record<string, number>>();
+  private static initializationPromise: Promise<any> | null = null;
+
+  static async getInstance() {
+    if (this.instance) return this.instance;
+
+    if (!this.initializationPromise) {
+      console.log("[Neoblocker] Loading Toxicity model on CPU (WASM)...");
+      modelStatuses.toxicity = "loading";
+      broadcastStatus();
+
+      this.initializationPromise = pipeline("text-classification", TOXICITY_MODEL, {
+        model_file_name: "../model"
+      }).then(pipe => {
+        this.instance = pipe as any;
+        console.log("[Neoblocker] Toxicity model loaded.");
+        modelStatuses.toxicity = "loaded";
+        broadcastStatus();
+        return this.instance;
+      }).catch(err => {
+        console.error("[Neoblocker] Failed to load Toxicity model:", err);
+        modelStatuses.toxicity = "error";
+        broadcastStatus();
+        this.instance = null;
+        this.initializationPromise = null;
+        throw err;
+      });
+    }
+
+    return this.initializationPromise;
+=======
   static instance: ReturnType<typeof pipeline> | null = null
 
   static async getInstance() {
@@ -81,6 +140,7 @@ class ToxicityClassifier {
       }
     }
     return this.instance
+>>>>>>> 26d73bf (🧪 fix: handle outer error path in analyzeContent and add unit tests)
   }
 
   static unload() {
@@ -90,7 +150,15 @@ class ToxicityClassifier {
   }
 
   static async analyze(text: string): Promise<Record<string, number>> {
+<<<<<<< HEAD
+    if (this.cache.has(text)) {
+      return this.cache.get(text)!;
+    }
+
+    const classifier = await this.getInstance();
+=======
     const classifier = await this.getInstance()
+>>>>>>> 26d73bf (🧪 fix: handle outer error path in analyzeContent and add unit tests)
     // Pass topk as a runtime inference option (not top_k) to get all label scores
     const results = (await (classifier as any)(text.slice(0, 512), {
       topk: 16
@@ -100,7 +168,19 @@ class ToxicityClassifier {
     for (const r of results) {
       scores[r.label] = r.score
     }
+<<<<<<< HEAD
+
+    // Limit cache size to prevent memory leaks in long sessions
+    if (this.cache.size > 1000) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+    this.cache.set(text, scores);
+
+    return scores;
+=======
     return scores
+>>>>>>> 26d73bf (🧪 fix: handle outer error path in analyzeContent and add unit tests)
   }
 }
 
@@ -114,6 +194,39 @@ const BIAS_MODEL = "protectai/distilroberta-bias-onnx"
 const BIAS_THRESHOLD = 0.5
 
 class BiasClassifier {
+<<<<<<< HEAD
+  static instance: ReturnType<typeof pipeline> | null = null;
+  private static cache = new Map<string, number>();
+  private static initializationPromise: Promise<any> | null = null;
+
+  static async getInstance() {
+    if (this.instance) return this.instance;
+
+    if (!this.initializationPromise) {
+      console.log("[Neoblocker] Loading Bias model on CPU (WASM)...");
+      modelStatuses.bias = "loading";
+      broadcastStatus();
+
+      this.initializationPromise = pipeline("text-classification", BIAS_MODEL, {
+        model_file_name: "../model"
+      }).then(pipe => {
+        this.instance = pipe as any;
+        console.log("[Neoblocker] Bias model loaded.");
+        modelStatuses.bias = "loaded";
+        broadcastStatus();
+        return this.instance;
+      }).catch(err => {
+        console.error("[Neoblocker] Failed to load Bias model:", err);
+        modelStatuses.bias = "error";
+        broadcastStatus();
+        this.instance = null;
+        this.initializationPromise = null;
+        throw err;
+      });
+    }
+
+    return this.initializationPromise;
+=======
   static instance: ReturnType<typeof pipeline> | null = null
 
   static async getInstance() {
@@ -138,6 +251,7 @@ class BiasClassifier {
       }
     }
     return this.instance
+>>>>>>> 26d73bf (🧪 fix: handle outer error path in analyzeContent and add unit tests)
   }
 
   static unload() {
@@ -147,6 +261,24 @@ class BiasClassifier {
   }
 
   static async analyze(text: string): Promise<number> {
+<<<<<<< HEAD
+    if (this.cache.has(text)) {
+      return this.cache.get(text)!;
+    }
+
+    const classifier = await this.getInstance();
+    const results = (await (classifier as any)(text.slice(0, 512))) as Array<{ label: string; score: number }>;
+    const result = results[0];
+    const biasScore = (result && result.label === "BIASED") ? result.score : 0;
+
+    if (this.cache.size > 1000) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+    this.cache.set(text, biasScore);
+
+    return biasScore;
+=======
     const classifier = await this.getInstance()
     const results = (await (classifier as any)(text.slice(0, 512))) as Array<{
       label: string
@@ -154,6 +286,7 @@ class BiasClassifier {
     }>
     const result = results[0]
     return result && result.label === "BIASED" ? result.score : 0
+>>>>>>> 26d73bf (🧪 fix: handle outer error path in analyzeContent and add unit tests)
   }
 }
 

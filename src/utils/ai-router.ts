@@ -58,8 +58,13 @@ const TOXICITY_REASON_MAP: Record<string, string> = {
 };
 
 export class NanoClassifier {
+  static sessionPromise: Promise<any> | null = null;
+
   static async getSession() {
-    return (window as any).ai.createTextSession();
+    if (!this.sessionPromise) {
+      this.sessionPromise = (window as any).ai.createTextSession();
+    }
+    return this.sessionPromise;
   }
 
   static async analyze(text: string) {

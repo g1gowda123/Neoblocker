@@ -37,3 +37,10 @@ keys.json
 
 # typescript
 .tsbuildinfo
+tsconfig.tsbuildinfo
+
+# temporary/test files
+comm_response.json
+next_response.json
+test-toxic.js
+

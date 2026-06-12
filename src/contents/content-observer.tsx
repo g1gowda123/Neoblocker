@@ -1,211 +1,657 @@
 import cssText from "data-text:~style.css"
 import type { PlasmoCSConfig } from "plasmo"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
 
-// We now message the background script for analysis because WASM cannot run in MV3 content scripts.
-
 export const config: PlasmoCSConfig = {
-  matches: ["https://www.youtube.com/*", "https://www.instagram.com/*"]
+  matches: ["https://www.youtube.com/*"],
 }
 
-console.log("[Firewall] Content script injected and monitoring...");
-
+console.log("[Neoblocker] Content script active.")
 
 export const getStyle = (): HTMLStyleElement => {
   const baseFontSize = 16
   let updatedCssText = cssText.replaceAll(":root", ":host(plasmo-csui)")
-  const remRegex = /([\d.]+)rem/g
-  updatedCssText = updatedCssText.replace(remRegex, (match, remValue) => {
-    const pixelsValue = parseFloat(remValue) * baseFontSize
-    return `${pixelsValue}px`
+  updatedCssText = updatedCssText.replace(/([\\d.]+)rem/g, (_, remValue) => {
+    return `${parseFloat(remValue) * baseFontSize}px`
   })
 
   const styleElement = document.createElement("style")
   styleElement.textContent = updatedCssText
 
-  // Inject into document.head so createPortal elements outside the Shadow DOM can use the tailwind styles
-  if (typeof document !== "undefined" && !document.querySelector("#plasmo-firewall-styles")) {
+  if (!document.querySelector("#plasmo-firewall-styles")) {
     const globalStyle = styleElement.cloneNode(true) as HTMLStyleElement
     globalStyle.id = "plasmo-firewall-styles"
-    // Remove :host restriction for the global version
-    globalStyle.textContent = globalStyle.textContent?.replaceAll(":host(plasmo-csui)", ":root") || ""
+    globalStyle.textContent =
+      globalStyle.textContent?.replaceAll(":host(plasmo-csui)", ":root") || ""
     document.head.appendChild(globalStyle)
   }
 
   return styleElement
 }
 
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface BlockedItem {
   id: string
   element: HTMLElement
-  action: "LOCAL_BLOCK" | "CLOUD_VERIFY"
-  text: string
+  reason: string
+  videoId?: string
+  commentId?: string
 }
 
-const FirewallOverlay = ({ item, onReveal }: { item: BlockedItem; onReveal: () => void }) => {
-  const [verdict, setVerdict] = useState<string | null>(null)
-  const [loading, setLoading] = useState(item.action === "CLOUD_VERIFY")
-
-  useEffect(() => {
-    if (item.action === "CLOUD_VERIFY") {
-      fetch("http://localhost:8000/api/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: item.text })
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          const finalVerdict = data.verdict || "SAFE"
-          setVerdict(finalVerdict)
-          setLoading(false)
-          if (finalVerdict === "SAFE") {
-            onReveal()
-          }
-        })
-        .catch((err) => {
-          console.error("Cloud verify error:", err)
-          setVerdict("SAFE")
-          setLoading(false)
-          onReveal()
-        })
-    }
-  }, [item])
+// ─── Firewall Overlay Card ─────────────────────────────────────────────────────
+const FirewallOverlay = ({
+  item,
+  onReveal,
+}: {
+  item: BlockedItem
+  onReveal: () => void
+}) => {
+  const ytDark = document.documentElement.hasAttribute("dark")
+  const bg = ytDark ? "#0f0f0f" : "#ffffff"
+  const txt = ytDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.9)"
+  const sub = ytDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)"
+  const btn = ytDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"
+  const btnHover = ytDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.11)"
 
   return (
-    <div className="plasmo-absolute plasmo-inset-0 plasmo-z-[9999] plasmo-flex plasmo-items-center plasmo-justify-center plasmo-bg-black/40 plasmo-backdrop-blur-md plasmo-rounded-xl plasmo-p-4 plasmo-transition-all">
-      <div className="plasmo-bg-slate-900/90 plasmo-border plasmo-border-slate-700 plasmo-p-6 plasmo-rounded-2xl plasmo-shadow-2xl plasmo-flex plasmo-flex-col plasmo-items-center plasmo-text-center plasmo-max-w-sm plasmo-w-full plasmo-mx-4">
-        {loading ? (
-          <>
-            <div className="plasmo-w-10 plasmo-h-10 plasmo-border-4 plasmo-border-blue-500 plasmo-border-t-transparent plasmo-rounded-full plasmo-animate-spin plasmo-mb-4"></div>
-            <h3 className="plasmo-text-xl plasmo-font-bold plasmo-text-white plasmo-mb-2">Agent Jury Analyzing...</h3>
-            <p className="plasmo-text-slate-300 plasmo-text-sm plasmo-mb-6">Deep verification in progress.</p>
-          </>
-        ) : (
-          <>
-            <div className="plasmo-text-red-500 plasmo-mb-3">
-              <svg className="plasmo-w-12 plasmo-h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <h3 className="plasmo-text-xl plasmo-font-bold plasmo-text-white plasmo-mb-2">
-              {item.action === "LOCAL_BLOCK" ? "Blocked Locally" : `Cloud Verdict: ${verdict}`}
-            </h3>
-            <p className="plasmo-text-slate-300 plasmo-text-sm plasmo-mb-6">This content has been flagged as potentially manipulative or toxic.</p>
-          </>
-        )}
-        <button
-          onClick={onReveal}
-          className="plasmo-px-6 plasmo-py-2 plasmo-bg-slate-800 hover:plasmo-bg-slate-700 plasmo-text-white plasmo-rounded-lg plasmo-text-sm plasmo-font-medium plasmo-transition-colors plasmo-w-full plasmo-border plasmo-border-slate-600 hover:plasmo-border-slate-500"
-        >
-          Reveal Anyway
-        </button>
-      </div>
+    <div
+      className="plasmo-absolute plasmo-inset-0 plasmo-z-[99999] plasmo-flex plasmo-flex-col plasmo-items-center plasmo-justify-center plasmo-p-4 plasmo-text-center plasmo-box-border"
+      style={{
+        backgroundColor: bg,
+        borderRadius: "inherit",
+        fontFamily: "Roboto, Arial, sans-serif",
+        opacity: 0.97,
+      }}
+    >
+      <svg
+        style={{ width: 15, height: 15, marginBottom: 6, opacity: 0.35, color: sub }}
+        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"
+          d="M12 3l7 4v5c0 4.418-3.134 8.215-7 9-3.866-.785-7-4.582-7-9V7l7-4z" />
+      </svg>
+      <span style={{ fontSize: 11, fontWeight: 500, color: txt, marginBottom: 2 }}>
+        Filtered by Neoblocker
+      </span>
+      <span style={{ fontSize: 10, color: sub, marginBottom: 12 }}>
+        {item.reason}
+      </span>
+      <button
+        onClick={onReveal}
+        style={{
+          backgroundColor: btn,
+          color: txt,
+          border: "none",
+          borderRadius: 18,
+          padding: "5px 14px",
+          fontSize: 11,
+          fontWeight: 500,
+          cursor: "pointer",
+          fontFamily: "Roboto, Arial, sans-serif",
+          transition: "background-color 0.15s",
+        }}
+        onMouseOver={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = btnHover }}
+        onMouseOut={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = btn }}
+      >
+        Show anyway
+      </button>
     </div>
   )
 }
 
+// ─── DOM selectors for video cards + comment elements ─────────────────────────
+const CARD_SELECTORS = [
+  "ytd-rich-item-renderer",
+  "ytd-video-renderer",
+  "ytd-compact-video-renderer",
+  "ytd-grid-video-renderer",
+  "ytd-reel-item-renderer",       // Shorts shelf thumbnails (home feed)
+  "ytd-rich-grid-slim-media",     // Shorts grid tiles
+  "ytd-ad-slot-renderer",
+].join(", ")
+
+const COMMENT_SELECTORS = [
+  "ytd-comment-thread-renderer",
+  "ytd-comment-renderer",
+].join(", ")
+
+const CONTENT_SELECTORS = CARD_SELECTORS + ", " + COMMENT_SELECTORS
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Extract the 11-char video ID from any card element or the current URL (for Shorts player). */
+function getVideoId(el: HTMLElement): string {
+  // Try anchor tags first (works for shelf cards and grid tiles)
+  for (const a of Array.from(el.querySelectorAll("a"))) {
+    const href = a.getAttribute("href") || ""
+    const m = href.match(/(?:v=|\/shorts\/)([a-zA-Z0-9_-]{11})/)
+    if (m) return m[1]
+  }
+  return ""
+}
+
+/** Get the video ID that is currently playing in the Shorts player from the URL. */
+function getShortsPlayerVideoId(): string {
+  const m = window.location.pathname.match(/\/shorts\/([a-zA-Z0-9_-]{11})/)
+  return m ? m[1] : ""
+}
+
+/** Returns true if we are currently on the Shorts player page. */
+function isOnShortsPage(): boolean {
+  return window.location.pathname.startsWith("/shorts/")
+}
+
+/** Create a mount node and append it to the element for a React portal overlay. */
+function createMountNode(el: HTMLElement): HTMLElement {
+  const mountNode = document.createElement("div")
+  mountNode.className = "plasmo-firewall-mount"
+  mountNode.style.cssText = "position:absolute;inset:0;z-index:99999;"
+  el.appendChild(mountNode)
+  return mountNode
+}
+
+/** Apply block styling to an element in blur mode. */
+function applyBlurStyle(el: HTMLElement) {
+  el.classList.add("firewall-blurred")
+  el.style.overflow = "visible"
+  el.style.position = "relative"
+  el.dataset.neoblockerBlocked = "true"
+}
+
+/** Apply block styling to an element in remove mode. */
+function applyRemoveStyle(el: HTMLElement) {
+  el.style.display = "none"
+  el.dataset.neoblockerBlocked = "true"
+  el.dataset.neoblockerRemoved = "true"
+}
+
+// ─── OverlayManager ───────────────────────────────────────────────────────────
 const OverlayManager = () => {
   const [blockedItems, setBlockedItems] = useState<BlockedItem[]>([])
+  const [filterMode, setFilterMode] = useState<"blur" | "remove">("blur")
+  const filterModeRef = useRef<"blur" | "remove">("blur")
+  const settingsRef = useRef<any>({})
 
-  const processing = new Set<HTMLElement>()
+  // Cache of video analysis results: videoId → reason (only blocked ones stored)
+  const blockedVideoIds = useRef(new Map<string, string>())
+  // Videos already sent off for analysis (avoid duplicate requests)
+  const analyzedVideoIds = useRef(new Set<string>())
+  // Videos the user explicitly revealed (never re-block)
+  const revealedVideoIds = useRef(new Set<string>())
+  // Comment reason map for self-healing
+  const blockedCommentReasons = useRef(new Map<string, string>())
 
+  // ─── Load settings from storage and keep in sync ───────────────────────────
   useEffect(() => {
+    const loadSettings = () => {
+      chrome.storage.local.get("neoblocker_settings", (res) => {
+        settingsRef.current = res?.neoblocker_settings || {}
+        const mode: "blur" | "remove" = settingsRef.current.filterMode || "blur"
+        filterModeRef.current = mode
+        setFilterMode(mode)
+      })
+    }
+    loadSettings()
+    chrome.storage.onChanged.addListener(loadSettings)
+    return () => chrome.storage.onChanged.removeListener(loadSettings)
+  }, [])
+
+  // ─── Concurrency queue for deep video analysis ─────────────────────────────
+  const requestQueue = useRef<string[]>([])
+  const activeRequests = useRef(0)
+  const MAX_CONCURRENCY = 5
+
+  const processQueue = async () => {
+    if (activeRequests.current >= MAX_CONCURRENCY || requestQueue.current.length === 0) return
+    const videoId = requestQueue.current.shift()
+    if (!videoId) return
+    activeRequests.current++
+    processQueue() // kick off next in parallel
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "analyzeVideoId", videoId })
+      const { action, reason } = response || { action: "SAFE" }
+      if (action === "LOCAL_BLOCK") {
+        blockedVideoIds.current.set(videoId, reason || "Flagged Content")
+        blockCardsWithId(videoId, reason || "Flagged Content")
+      }
+    } catch (err) {
+      console.error(`[Neoblocker] Queue analysis failed for ${videoId}:`, err)
+    } finally {
+      activeRequests.current--
+      processQueue()
+    }
+  }
+
+  const enqueueVideo = (videoId: string) => {
+    if (analyzedVideoIds.current.has(videoId)) return
+    analyzedVideoIds.current.add(videoId)
+    requestQueue.current.push(videoId)
+    processQueue()
+  }
+
+  // ─── Core: apply block to a DOM element ────────────────────────────────────
+  const blockElement = (el: HTMLElement, reason: string, videoId?: string, commentId?: string) => {
+    if (el.dataset.neoblockerBlocked === "true") return
+    if (filterModeRef.current === "remove") {
+      applyRemoveStyle(el)
+      return
+    }
+    // Blur mode
+    applyBlurStyle(el)
+    if (!el.querySelector(".plasmo-firewall-mount")) {
+      const mountNode = createMountNode(el)
+      const id = commentId || Math.random().toString(36).substring(7)
+      setBlockedItems((prev) => [
+        ...prev.filter((i) => (commentId ? i.commentId !== commentId : i.videoId !== videoId)),
+        { id, element: mountNode, reason, videoId, commentId },
+      ])
+      if (commentId) {
+        blockedCommentReasons.current.set(commentId, reason)
+      }
+    }
+  }
+
+  // ─── Block all DOM cards matching a videoId ─────────────────────────────────
+  const blockCardsWithId = (videoId: string, reason: string) => {
+    if (revealedVideoIds.current.has(videoId)) return
+    document.querySelectorAll<HTMLElement>(CARD_SELECTORS).forEach((el) => {
+      if (el.dataset.neoblockerBlocked === "true") return
+      if (getVideoId(el) === videoId) {
+        blockElement(el, reason, videoId)
+      }
+    })
+  }
+
+  // ─── Reveal handlers ────────────────────────────────────────────────────────
+  const handleReveal = (videoId: string) => {
+    revealedVideoIds.current.add(videoId)
+    setBlockedItems((prev) => prev.filter((item) => item.videoId !== videoId))
+    document.querySelectorAll<HTMLElement>(CARD_SELECTORS).forEach((el) => {
+      if (getVideoId(el) === videoId) {
+        el.classList.remove("firewall-blurred")
+        el.removeAttribute("data-neoblocker-blocked")
+        el.dataset.neoblockerRevealed = "true"
+        el.style.overflow = ""
+        el.style.position = ""
+        el.querySelectorAll(".plasmo-firewall-mount").forEach((m) => m.remove())
+      }
+    })
+  }
+
+  const handleRevealComment = (commentId: string) => {
+    setBlockedItems((prev) => prev.filter((item) => item.commentId !== commentId))
+    const el = document.querySelector<HTMLElement>(`[data-neoblocker-comment-id="${commentId}"]`)
+    if (el) {
+      el.classList.remove("firewall-blurred")
+      el.removeAttribute("data-neoblocker-blocked")
+      el.dataset.neoblockerRevealed = "true"
+      el.style.overflow = ""
+      el.style.position = ""
+      el.querySelectorAll(".plasmo-firewall-mount").forEach((m) => m.remove())
+    }
+  }
+
+  // ─── Main analysis logic ────────────────────────────────────────────────────
+  useEffect(() => {
+    // ── processElement: analyse one card / comment renderer ──────────────────
     const processElement = async (target: HTMLElement) => {
-      if (target.dataset.firewallProcessed === "true" || processing.has(target)) return
+      // Fan out Shorts shelves to each reel item
+      if (target.tagName === "YTD-REEL-SHELF-RENDERER") {
+        target.querySelectorAll<HTMLElement>("ytd-reel-item-renderer").forEach(processElement)
+        return
+      }
 
-      const text = target.textContent?.trim() || ""
-      if (text.length < 10) return
+      // Thread → delegate to the inner comment renderer
+      if (target.tagName === "YTD-COMMENT-THREAD-RENDERER") {
+        const commentRenderer = target.querySelector<HTMLElement>("ytd-comment-renderer")
+        if (commentRenderer) processElement(commentRenderer)
+        return
+      }
 
-      processing.add(target)
-      target.dataset.firewallProcessed = "true"
-
-      try {
-        const response = await chrome.runtime.sendMessage({ action: "analyze", text })
-        const { action, error } = response || { action: "SAFE" };
-        
-        if (error) {
-           console.error("[Firewall] Background AI Error:", error);
+      // ── Comment processing ────────────────────────────────────────────────
+      if (target.tagName === "YTD-COMMENT-RENDERER") {
+        if (target.dataset.neoblockerBlocked === "true") {
+          if (filterModeRef.current === "remove" && target.style.display !== "none") {
+            target.style.display = "none"
+          }
+          return
         }
-        
-        console.log(`[Firewall] Analyzed target: ${action} - Text preview: ${text.substring(0, 30)}...`)
-        
-        if (action !== "SAFE") {
-          target.classList.add("firewall-blurred")
-          target.style.overflow = "visible" // Ensure overlay isn't clipped
-          
-          const mountNode = document.createElement("div")
-          mountNode.className = "plasmo-firewall-mount"
-          // Ensure it covers the whole relative parent
-          mountNode.style.position = "absolute"
-          mountNode.style.inset = "0"
-          mountNode.style.zIndex = "99999"
-          
-          target.appendChild(mountNode)
+        if (target.dataset.neoblockerRevealed === "true") return
 
-          setBlockedItems((prev) => [
-            ...prev,
-            {
-              id: Math.random().toString(36).substring(7),
-              element: mountNode,
-              action: action as "LOCAL_BLOCK" | "CLOUD_VERIFY",
-              text
+        const contentEl = target.querySelector("#content-text")
+        if (!contentEl) return
+        const commentText = (contentEl.textContent || "").replace(/\s+/g, " ").trim()
+        if (commentText.length < 5) return
+
+        const lowerText = commentText.toLowerCase()
+        const settings = settingsRef.current
+
+        // Assign a stable ID so we can track and self-heal this comment
+        if (!target.dataset.neoblockerCommentId) {
+          target.dataset.neoblockerCommentId = `c-${Math.random().toString(36).substring(7)}`
+        }
+        const commentId = target.dataset.neoblockerCommentId
+
+        // Banned keywords (highest priority)
+        if (matchesBannedKeyword(settings, lowerText)) {
+          blockElement(target, "Banned Keyword", undefined, commentId)
+          return
+        }
+        // Allowlist exceptions
+        if (matchesException(settings, lowerText)) return
+
+        try {
+          const response = await chrome.runtime.sendMessage({
+            action: "analyze",
+            text: commentText,
+            isTitle: false,
+          })
+          if (response?.action === "LOCAL_BLOCK") {
+            blockElement(target, response.reason || "Flagged Content", undefined, commentId)
+          }
+        } catch (err) {
+          console.error("[Neoblocker] Comment analysis failed:", err)
+        }
+        return
+      }
+
+      // ── Video card processing ─────────────────────────────────────────────
+      if (target.dataset.neoblockerBlocked === "true") {
+        if (filterModeRef.current === "remove" && target.style.display !== "none") {
+          target.style.display = "none"
+        }
+        return
+      }
+      if (target.dataset.neoblockerRevealed === "true") return
+
+      const videoId = getVideoId(target)
+      if (videoId && revealedVideoIds.current.has(videoId)) return
+
+      const settings = settingsRef.current
+      const channelName = extractChannelName(target)
+      const titleText = extractTitleText(target)
+      const lowerChannel = channelName.toLowerCase()
+      const lowerTitle = titleText.toLowerCase()
+
+      // Banned keywords
+      if (matchesBannedKeyword(settings, lowerTitle, lowerChannel)) {
+        if (videoId) blockedVideoIds.current.set(videoId, "Banned Keyword")
+        blockElement(target, "Banned Keyword", videoId || undefined)
+        return
+      }
+
+      if (!videoId) return
+
+      // If already confirmed blocked by cache
+      if (blockedVideoIds.current.has(videoId)) {
+        blockElement(target, blockedVideoIds.current.get(videoId)!, videoId)
+        return
+      }
+
+      // Allowlist exceptions
+      if (matchesException(settings, lowerTitle, lowerChannel)) return
+
+      // Quick title analysis
+      if (lowerTitle) {
+        try {
+          const response = await chrome.runtime.sendMessage({
+            action: "analyze",
+            text: titleText,
+            isTitle: true,
+          })
+          if (response?.action === "LOCAL_BLOCK") {
+            const reason = response.reason || "Flagged Content"
+            blockedVideoIds.current.set(videoId, reason)
+            blockElement(target, reason, videoId)
+            return
+          }
+        } catch (err) {
+          console.error("[Neoblocker] Title analysis failed:", err)
+        }
+      }
+
+      // Deep analysis via background
+      enqueueVideo(videoId)
+    }
+
+    // ── processShortsPlayer: block/allow the currently-visible Short ─────────
+    const processShortsPlayer = async () => {
+      const videoId = getShortsPlayerVideoId()
+      if (!videoId) return
+
+      // Find the Shorts player container to apply the overlay on
+      const playerEl = document.querySelector<HTMLElement>(
+        "ytd-shorts ytd-reel-video-renderer[is-active], ytd-shorts ytd-reel-video-renderer:first-child, #shorts-player, ytd-shorts"
+      )
+      if (!playerEl) return
+
+      // Already handled
+      if (playerEl.dataset.neoblockerShortsId === videoId) return
+      playerEl.dataset.neoblockerShortsId = videoId
+
+      // If user revealed this video, skip
+      if (revealedVideoIds.current.has(videoId)) {
+        clearShortsOverlay(playerEl, videoId)
+        return
+      }
+
+      const settings = settingsRef.current
+
+      // Grab the title text from the Shorts player UI
+      const titleEl = document.querySelector<HTMLElement>(
+        "#title .yt-formatted-string, .title .yt-formatted-string, ytd-shorts #title, [id='title'] yt-formatted-string"
+      )
+      const titleText = (titleEl?.textContent || "").replace(/\s+/g, " ").trim()
+      const lowerTitle = titleText.toLowerCase()
+
+      // Banned keyword check
+      if (matchesBannedKeyword(settings, lowerTitle)) {
+        blockedVideoIds.current.set(videoId, "Banned Keyword")
+        blockShortsPlayer(playerEl, videoId, "Banned Keyword")
+        return
+      }
+
+      // Check cache
+      if (blockedVideoIds.current.has(videoId)) {
+        blockShortsPlayer(playerEl, videoId, blockedVideoIds.current.get(videoId)!)
+        return
+      }
+
+      // Exception check
+      if (matchesException(settings, lowerTitle)) return
+
+      // Quick title analysis
+      if (lowerTitle) {
+        try {
+          const response = await chrome.runtime.sendMessage({
+            action: "analyze",
+            text: titleText,
+            isTitle: true,
+          })
+          if (response?.action === "LOCAL_BLOCK") {
+            const reason = response.reason || "Flagged Content"
+            blockedVideoIds.current.set(videoId, reason)
+            blockShortsPlayer(playerEl, videoId, reason)
+            return
+          }
+        } catch (err) {
+          console.error("[Neoblocker] Shorts title analysis failed:", err)
+        }
+      }
+
+      // Deep analysis
+      if (!analyzedVideoIds.current.has(videoId)) {
+        analyzedVideoIds.current.add(videoId)
+        try {
+          const response = await chrome.runtime.sendMessage({ action: "analyzeVideoId", videoId })
+          const { action, reason } = response || { action: "SAFE" }
+          if (action === "LOCAL_BLOCK") {
+            blockedVideoIds.current.set(videoId, reason || "Flagged Content")
+            // Re-query player element in case it changed
+            const currentPlayerEl = document.querySelector<HTMLElement>(
+              "ytd-shorts ytd-reel-video-renderer[is-active], ytd-shorts ytd-reel-video-renderer:first-child, #shorts-player, ytd-shorts"
+            )
+            if (currentPlayerEl && getShortsPlayerVideoId() === videoId) {
+              blockShortsPlayer(currentPlayerEl, videoId, reason || "Flagged Content")
             }
-          ])
+          }
+        } catch (err) {
+          console.error(`[Neoblocker] Shorts deep analysis failed for ${videoId}:`, err)
         }
-      } catch (err) {
-        console.error("Analysis error:", err)
-      } finally {
-        processing.delete(target)
       }
     }
 
-    const observer = new MutationObserver((mutations) => {
-      const targetsToProcess = new Set<HTMLElement>()
+    const blockShortsPlayer = (el: HTMLElement, videoId: string, reason: string) => {
+      if (revealedVideoIds.current.has(videoId)) return
+      applyBlurStyle(el)
+      if (!el.querySelector(".plasmo-firewall-mount")) {
+        const mountNode = createMountNode(el)
+        setBlockedItems((prev) => [
+          ...prev.filter((i) => i.videoId !== videoId),
+          { id: videoId, element: mountNode, reason, videoId },
+        ])
+      }
+    }
 
-      mutations.forEach((mutation) => {
-        // Catch direct additions or text changes inside target elements
-        const target = (mutation.target as HTMLElement).closest?.('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
-        if (target) {
-          targetsToProcess.add(target as HTMLElement)
+    const clearShortsOverlay = (el: HTMLElement, videoId: string) => {
+      el.classList.remove("firewall-blurred")
+      el.removeAttribute("data-neoblocker-blocked")
+      el.style.overflow = ""
+      el.style.position = ""
+      el.querySelectorAll(".plasmo-firewall-mount").forEach((m) => m.remove())
+      setBlockedItems((prev) => prev.filter((i) => i.videoId !== videoId))
+    }
+
+    // ── Self-healing: restore overlays YouTube may have wiped ─────────────────
+    const selfHeal = () => {
+      document.querySelectorAll<HTMLElement>('[data-neoblocker-blocked="true"]').forEach((el) => {
+        if (filterModeRef.current === "remove") {
+          if (el.style.display !== "none") el.style.display = "none"
+          return
         }
-
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const el = node as HTMLElement
-            // If the added node is inside a target
-            const closestTarget = el.closest?.('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
-            if (closestTarget) {
-              targetsToProcess.add(closestTarget as HTMLElement)
+        if (!el.classList.contains("firewall-blurred")) {
+          el.classList.add("firewall-blurred")
+          el.style.overflow = "visible"
+          el.style.position = "relative"
+        }
+        if (!el.querySelector(".plasmo-firewall-mount")) {
+          const mountNode = createMountNode(el)
+          const commentId = el.dataset.neoblockerCommentId
+          if (commentId) {
+            const reason = blockedCommentReasons.current.get(commentId) || "Flagged Content"
+            setBlockedItems((prev) => [
+              ...prev.filter((i) => i.commentId !== commentId),
+              { id: commentId, element: mountNode, reason, commentId },
+            ])
+          } else {
+            const videoId = el.dataset.neoblockerShortsId || getVideoId(el)
+            if (videoId) {
+              const reason = blockedVideoIds.current.get(videoId) || "Flagged Content"
+              setBlockedItems((prev) => [
+                ...prev.filter((i) => i.videoId !== videoId),
+                { id: Math.random().toString(36).substring(7), element: mountNode, reason, videoId },
+              ])
             }
-            // If the added node contains targets
-            const innerTargets = el.querySelectorAll?.('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
-            innerTargets?.forEach(t => targetsToProcess.add(t as HTMLElement))
           }
-        })
+        }
       })
+    }
 
-      targetsToProcess.forEach(t => processElement(t))
+    // ── MutationObserver ──────────────────────────────────────────────────────
+    const observer = new MutationObserver(() => {
+      selfHeal()
+
+      if (isOnShortsPage()) {
+        processShortsPlayer()
+        return
+      }
+
+      // Regular page: collect changed card/comment nodes and process them
+      const targets = new Set<HTMLElement>()
+      document.querySelectorAll<HTMLElement>(CONTENT_SELECTORS).forEach((el) => {
+        if (!el.dataset.neoblockerBlocked && !el.dataset.neoblockerRevealed) {
+          targets.add(el)
+        }
+      })
+      targets.forEach(processElement)
     })
 
-    const existing = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-comment-thread-renderer, article, div[role="dialog"]')
-    existing.forEach(t => processElement(t as HTMLElement))
+    // Initial scan
+    if (isOnShortsPage()) {
+      processShortsPlayer()
+    } else {
+      document.querySelectorAll<HTMLElement>(CONTENT_SELECTORS).forEach(processElement)
+    }
 
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["href", "is-active"],
+    })
 
-    return () => observer.disconnect()
+    // ── URL-change watcher for SPA navigation (Shorts swipe / YT navigation) ──
+    let lastUrl = location.href
+    const urlPoller = setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href
+        if (isOnShortsPage()) {
+          processShortsPlayer()
+        }
+      }
+    }, 400)
+
+    return () => {
+      observer.disconnect()
+      clearInterval(urlPoller)
+    }
   }, [])
 
-  const handleReveal = (id: string, mountNode: HTMLElement) => {
-    setBlockedItems((prev) => prev.filter((item) => item.id !== id))
-    
-    const target = mountNode.parentElement
-    if (target) {
-      target.classList.remove("firewall-blurred")
-      target.style.overflow = ""
-      mountNode.remove()
+  // ─── Sync filter mode changes across already-blocked elements ───────────────
+  useEffect(() => {
+    const blockedEls = document.querySelectorAll<HTMLElement>('[data-neoblocker-blocked="true"]')
+    if (filterMode === "remove") {
+      setBlockedItems([])
+      blockedEls.forEach((el) => {
+        el.style.display = "none"
+        el.classList.remove("firewall-blurred")
+        el.style.overflow = ""
+        el.style.position = ""
+        el.querySelectorAll(".plasmo-firewall-mount").forEach((m) => m.remove())
+        el.dataset.neoblockerRemoved = "true"
+      })
+    } else {
+      blockedEls.forEach((el) => {
+        if (el.dataset.neoblockerRemoved === "true") {
+          el.style.display = ""
+          applyBlurStyle(el)
+          el.removeAttribute("data-neoblocker-removed")
+        }
+        if (!el.querySelector(".plasmo-firewall-mount")) {
+          const mountNode = createMountNode(el)
+          const commentId = el.dataset.neoblockerCommentId
+          if (commentId) {
+            const reason = blockedCommentReasons.current.get(commentId) || "Flagged Content"
+            setBlockedItems((prev) => [
+              ...prev.filter((i) => i.commentId !== commentId),
+              { id: commentId, element: mountNode, reason, commentId },
+            ])
+          } else {
+            const videoId = el.dataset.neoblockerShortsId || getVideoId(el)
+            if (videoId) {
+              const reason = blockedVideoIds.current.get(videoId) || "Flagged Content"
+              setBlockedItems((prev) => [
+                ...prev.filter((i) => i.videoId !== videoId),
+                { id: Math.random().toString(36).substring(7), element: mountNode, reason, videoId },
+              ])
+            }
+          }
+        }
+      })
     }
-  }
+  }, [filterMode])
 
   return (
     <>
@@ -214,13 +660,44 @@ const OverlayManager = () => {
           <FirewallOverlay
             key={item.id}
             item={item}
-            onReveal={() => handleReveal(item.id, item.element)}
+            onReveal={() => {
+              if (item.commentId) handleRevealComment(item.commentId)
+              else if (item.videoId) handleReveal(item.videoId)
+            }}
           />,
           item.element
         )
       )}
     </>
   )
+}
+
+// ─── Utility: keyword helpers ─────────────────────────────────────────────────
+function matchesBannedKeyword(settings: any, ...texts: string[]): boolean {
+  const raw = typeof settings.bannedKeywords === "string" ? settings.bannedKeywords : ""
+  const keywords = raw.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+  return keywords.length > 0 && texts.some((t) => keywords.some((kw: string) => t.includes(kw)))
+}
+
+function matchesException(settings: any, ...texts: string[]): boolean {
+  const raw = typeof settings.exceptions === "string" ? settings.exceptions : ""
+  const keywords = raw.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+  return keywords.length > 0 && texts.some((t) => keywords.some((kw: string) => t.includes(kw)))
+}
+
+function extractChannelName(el: HTMLElement): string {
+  const channelEl = el.querySelector(
+    "ytd-channel-name yt-formatted-string, ytd-channel-name, #channel-name a, #channel-name, #byline"
+  )
+  return (channelEl?.textContent || "").replace(/\s+/g, " ").trim()
+}
+
+function extractTitleText(el: HTMLElement): string {
+  const titleEl = el.querySelector(
+    "a#video-title-link, h3 a#video-title, #video-title-link, #video-title," +
+    " .reel-item-title, h3 yt-formatted-string, #overlays h3, span#title"
+  )
+  return (titleEl?.textContent || "").replace(/\s+/g, " ").trim()
 }
 
 export default OverlayManager

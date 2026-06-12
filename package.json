@@ -1,14 +1,18 @@
 {
-  "name": "extension-app",
-  "displayName": "Extension app",
-  "version": "0.0.1",
-  "description": "A basic Plasmo extension.",
-  "author": "Plasmo Corp. <foss@plasmo.com>",
+  "name": "neoblocker",
+  "displayName": "Neoblocker — Cognitive Defense Firewall",
+  "version": "1.0.0",
+  "description": "A fully offline, cross-browser AI extension that detects and blocks toxic content, hate speech, bias, and clickbait using local WASM models. No data ever leaves your device. Note: Please give the extension 2 minutes on first use after opening youtube to allow it to download the ml models. Then hard refresh the page and the exension should start.",
+  "author": "Neoblocker",
   "scripts": {
-    "dev": "npm run copy-wasm && plasmo dev",
-    "build": "npm run copy-wasm && plasmo build",
+    "dev": "npm run copy-wasm:dev && plasmo dev",
+    "build": "npm run build:chrome",
+    "build:chrome": "plasmo build --target=chrome-mv3 && npm run copy-wasm:chrome",
+    "build:firefox": "plasmo build --target=firefox-mv3 && npm run copy-wasm:firefox",
     "package": "plasmo package",
-    "copy-wasm": "mkdir -p build/chrome-mv3-dev/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/chrome-mv3-dev/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/chrome-mv3-dev/wasm/ && echo [copy-wasm] done."
+    "copy-wasm:dev": "mkdir -p build/chrome-mv3-dev/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/chrome-mv3-dev/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/chrome-mv3-dev/wasm/ && echo [copy-wasm:dev] done.",
+    "copy-wasm:chrome": "mkdir -p build/chrome-mv3-prod/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/chrome-mv3-prod/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/chrome-mv3-prod/wasm/ && echo [copy-wasm:chrome] done.",
+    "copy-wasm:firefox": "mkdir -p build/firefox-mv3-prod/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/firefox-mv3-prod/wasm/ && cp node_modules/@xenova/transformers/dist/ort-wasm.wasm build/firefox-mv3-prod/wasm/ && echo [copy-wasm:firefox] done."
   },
   "dependencies": {
     "@xenova/transformers": "^2.17.2",
@@ -28,11 +32,16 @@
     "typescript": "5.3.3"
   },
   "manifest": {
+    "name": "Neoblocker — Cognitive Defense Firewall",
+    "description": "A fully offline AI shield that detects toxic content, hate speech, bias, and clickbait using local WASM models. No data ever leaves your device. Note: Please give the extension 2 minutes on first use after opening youtube to allow it to download the ml models. Then hard refresh the page and the exension should start.",
     "host_permissions": [
       "https://*/*"
     ],
+    "permissions": [
+      "storage"
+    ],
     "content_security_policy": {
-      "extension_pages": "script-src 'self' 'wasm-unsafe-eval' http://localhost; object-src 'self';"
+      "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
     },
     "web_accessible_resources": [
       {
@@ -41,8 +50,7 @@
           "wasm/*.mjs"
         ],
         "matches": [
-          "https://www.youtube.com/*",
-          "https://www.instagram.com/*"
+          "<all_urls>"
         ]
       }
     ]

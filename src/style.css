@@ -2,15 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+body {
+  margin: 0;
+  background-color: transparent !important;
+  font-family: Roboto, Arial, sans-serif;
+}
+
 .firewall-blurred {
   position: relative !important;
 }
 
-/* Blur everything inside the target except our overlay mount */
+/* Hide everything inside the card except our overlay mount */
 .firewall-blurred > *:not(.plasmo-firewall-mount) {
-  filter: blur(30px) !important;
+  opacity: 0 !important;
   pointer-events: none !important;
-  transition: filter 0.5s ease-out !important;
+  transition: opacity 0.2s ease-out !important;
 }
 
 #plasmo-shadow-container {

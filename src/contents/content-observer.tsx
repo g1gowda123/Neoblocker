@@ -292,6 +292,18 @@ const OverlayManager = () => {
         el.querySelectorAll(".plasmo-firewall-mount").forEach((m) => m.remove())
       }
     })
+    // Also clear the active Shorts player if it matches this videoId
+    const playerEl = document.querySelector<HTMLElement>(
+      "ytd-shorts ytd-reel-video-renderer[is-active], ytd-shorts ytd-reel-video-renderer:first-child, #shorts-player, ytd-shorts"
+    )
+    if (playerEl && getShortsPlayerVideoId() === videoId) {
+      playerEl.classList.remove("firewall-blurred")
+      playerEl.removeAttribute("data-neoblocker-blocked")
+      playerEl.dataset.neoblockerRevealed = "true"
+      playerEl.style.overflow = ""
+      playerEl.style.position = ""
+      playerEl.querySelectorAll(".plasmo-firewall-mount").forEach((m) => m.remove())
+    }
   }
 
   const handleRevealComment = (commentId: string) => {
@@ -441,58 +453,78 @@ const OverlayManager = () => {
       )
       if (!playerEl) return
 
-      // Already handled
-      if (playerEl.dataset.neoblockerShortsId === videoId) return
-      playerEl.dataset.neoblockerShortsId = videoId
-
       // If user revealed this video, skip
       if (revealedVideoIds.current.has(videoId)) {
         clearShortsOverlay(playerEl, videoId)
+        playerEl.dataset.neoblockerShortsId = videoId
         return
       }
 
-      const settings = settingsRef.current
+      // Check cache first (if we already know it's blocked, block it immediately)
+      if (blockedVideoIds.current.has(videoId)) {
+        blockShortsPlayer(playerEl, videoId, blockedVideoIds.current.get(videoId)!)
+        playerEl.dataset.neoblockerShortsId = videoId
+        return
+      }
+
+      // Already handled for this video ID
+      if (playerEl.dataset.neoblockerShortsId === videoId) return
 
       // Grab the title text from the Shorts player UI
-      const titleEl = document.querySelector<HTMLElement>(
-        "#title .yt-formatted-string, .title .yt-formatted-string, ytd-shorts #title, [id='title'] yt-formatted-string"
+      const titleEl = playerEl.querySelector<HTMLElement>(
+        "a#video-title-link, h3 a#video-title, #video-title-link, #video-title, .reel-item-title, h3 yt-formatted-string, #overlays h3, span#title, #title"
       )
       const titleText = (titleEl?.textContent || "").replace(/\s+/g, " ").trim()
       const lowerTitle = titleText.toLowerCase()
 
-      // Banned keyword check
-      if (matchesBannedKeyword(settings, lowerTitle)) {
+      // Grab the channel name from the Shorts player UI
+      const channelEl = playerEl.querySelector<HTMLElement>(
+        "ytd-channel-name #text, .ytd-channel-name, #channel-name, #byline"
+      )
+      const channelName = (channelEl?.textContent || "").replace(/\s+/g, " ").trim()
+      const lowerChannel = channelName.toLowerCase()
+
+      // If title text is not yet populated, wait until it is
+      if (!titleText) {
+        return
+      }
+
+      // Mark as handled now that we have the text and are running the evaluation
+      playerEl.dataset.neoblockerShortsId = videoId
+
+      const settings = settingsRef.current
+
+      // Banned keyword check (checks title and channel)
+      if (matchesBannedKeyword(settings, lowerTitle, lowerChannel)) {
         blockedVideoIds.current.set(videoId, "Banned Keyword")
         blockShortsPlayer(playerEl, videoId, "Banned Keyword")
         return
       }
 
-      // Check cache
-      if (blockedVideoIds.current.has(videoId)) {
-        blockShortsPlayer(playerEl, videoId, blockedVideoIds.current.get(videoId)!)
-        return
-      }
-
       // Exception check
-      if (matchesException(settings, lowerTitle)) return
+      if (matchesException(settings, lowerTitle, lowerChannel)) return
 
       // Quick title analysis
-      if (lowerTitle) {
-        try {
-          const response = await chrome.runtime.sendMessage({
-            action: "analyze",
-            text: titleText,
-            isTitle: true,
-          })
-          if (response?.action === "LOCAL_BLOCK") {
-            const reason = response.reason || "Flagged Content"
-            blockedVideoIds.current.set(videoId, reason)
-            blockShortsPlayer(playerEl, videoId, reason)
-            return
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: "analyze",
+          text: titleText,
+          isTitle: true,
+        })
+        if (response?.action === "LOCAL_BLOCK") {
+          const reason = response.reason || "Flagged Content"
+          blockedVideoIds.current.set(videoId, reason)
+          // Re-query player element in case it changed during async call
+          const currentPlayerEl = document.querySelector<HTMLElement>(
+            "ytd-shorts ytd-reel-video-renderer[is-active], ytd-shorts ytd-reel-video-renderer:first-child, #shorts-player, ytd-shorts"
+          )
+          if (currentPlayerEl && getShortsPlayerVideoId() === videoId) {
+            blockShortsPlayer(currentPlayerEl, videoId, reason)
           }
-        } catch (err) {
-          console.error("[Neoblocker] Shorts title analysis failed:", err)
+          return
         }
+      } catch (err) {
+        console.error("[Neoblocker] Shorts title analysis failed:", err)
       }
 
       // Deep analysis
@@ -503,7 +535,6 @@ const OverlayManager = () => {
           const { action, reason } = response || { action: "SAFE" }
           if (action === "LOCAL_BLOCK") {
             blockedVideoIds.current.set(videoId, reason || "Flagged Content")
-            // Re-query player element in case it changed
             const currentPlayerEl = document.querySelector<HTMLElement>(
               "ytd-shorts ytd-reel-video-renderer[is-active], ytd-shorts ytd-reel-video-renderer:first-child, #shorts-player, ytd-shorts"
             )

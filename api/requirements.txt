@@ -1,5 +1,0 @@
-fastapi
-uvicorn
-google-genai
-crawl4ai
-python-dotenv

@@ -5,10 +5,11 @@ trigger: manual
 ￼# Project: Cognitive Defense Firewall
 You are an expert full-stack engineer. We are building a Manifest V3 browser extension using the Plasmo framework, React, and Tailwind CSS. 
 
-## The Cascaded AI Architecture
-1. Tier 1 (Micro-Sentinel): Uses Transformers.js (WebAssembly) running a quantized `toxic-bert` or `Xenova/distilbert-base-uncased-finetuned-sst-2-english` model directly in the browser. It flags basic toxicity or clickbait instantly.
-2. Tier 2 (Nano-Juror): Uses Chrome's `window.ai` (Gemini Nano) Prompt API. Only content flagged as "Suspicious" by Tier 1 is sent here to determine if it is manipulative news/social engineering.
-3. Tier 3 (Cloud Board): High-risk content is sent to our Python FastAPI backend (using Gemini Pro and Crawl4AI for deep link scraping) for final verification and reframing.
+## Fully Offline AI Architecture
+The extension operates entirely offline to protect user privacy. It performs multi-layered text classification directly in the browser using WebAssembly (WASM):
+1. **Toxicity Classifier**: Uses `protectai/unbiased-toxic-roberta-onnx` (Transformers.js running on CPU WASM) to detect toxicity, severe toxicity, obscenity, threats, insults, and identity attack/hate speech.
+2. **Bias & Clickbait Classifier**: Uses `protectai/distilroberta-bias-onnx` to scan for political/media bias and opinionated slant.
+3. **Safe Context & Keyword Rules**: Uses a safe-context allowlist (gaming, educational, and historical keywords) to mitigate false positives, along with user-configurable exception keywords and elevated keyword detection for explicit hate speech.
 
 ## UI Strategy
 Use Tailwind CSS to inject a React component that applies `filter: blur(15px)` over flagged DOM elements, replacing them with a custom warning overlay.

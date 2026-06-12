@@ -55,6 +55,23 @@ const TOXICITY_REASON_MAP: Record<string, string> = {
   sexual_explicit: "Explicit Content",
 };
 
+export class NanoClassifier {
+  static async getSession() {
+    return (window as any).ai.createTextSession();
+  }
+
+  static async analyze(text: string) {
+    try {
+      const session = await this.getSession();
+      const response = await session.prompt(text);
+      return response.trim().toUpperCase();
+    } catch (error) {
+      console.error("NanoClassifier error:", error);
+      return "SAFE";
+    }
+  }
+}
+
 class ToxicityClassifier {
   static instance: ReturnType<typeof pipeline> | null = null;
 

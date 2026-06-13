@@ -249,12 +249,13 @@ export async function analyzeContent(
 
   // User-configured exceptions check (e.g. mrbeast, ludwig, jojo)
   if (settings.exceptions) {
-    const keywords = settings.exceptions
+    // Check if _parsedExceptions is available (cached), otherwise fallback to parsing
+    const keywords = (settings as any)._parsedExceptions || settings.exceptions
       .split(",")
       .map((kw) => kw.trim().toLowerCase())
       .filter((kw) => kw.length > 0);
 
-    const matchedKeyword = keywords.find((kw) => lowerText.includes(kw));
+    const matchedKeyword = keywords.find((kw: string) => lowerText.includes(kw));
     if (matchedKeyword) {
       console.log(`[Neoblocker] Exception matched: "${matchedKeyword}". Bypassing analysis.`);
       return { action: "SAFE" };

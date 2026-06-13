@@ -196,8 +196,17 @@ const OverlayManager = () => {
   useEffect(() => {
     const loadSettings = () => {
       chrome.storage.local.get("neoblocker_settings", (res) => {
-        settingsRef.current = res?.neoblocker_settings || {}
-        const mode: "blur" | "remove" = settingsRef.current.filterMode || "blur"
+        const settings = res?.neoblocker_settings || {}
+
+        // Cache parsed keywords to prevent splitting on every element
+        const rawBanned = typeof settings.bannedKeywords === "string" ? settings.bannedKeywords : ""
+        settings._parsedBannedKeywords = rawBanned.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+
+        const rawExceptions = typeof settings.exceptions === "string" ? settings.exceptions : ""
+        settings._parsedExceptions = rawExceptions.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+
+        settingsRef.current = settings
+        const mode: "blur" | "remove" = settings.filterMode || "blur"
         filterModeRef.current = mode
         setFilterMode(mode)
       })
@@ -606,22 +615,30 @@ const OverlayManager = () => {
     }
 
     // ── MutationObserver ──────────────────────────────────────────────────────
+    let mutationTimeout: number | null = null;
     const observer = new MutationObserver(() => {
-      selfHeal()
-
-      if (isOnShortsPage()) {
-        processShortsPlayer()
-        return
+      if (mutationTimeout) {
+        window.cancelAnimationFrame(mutationTimeout);
       }
 
-      // Regular page: collect changed card/comment nodes and process them
-      const targets = new Set<HTMLElement>()
-      document.querySelectorAll<HTMLElement>(CONTENT_SELECTORS).forEach((el) => {
-        if (!el.dataset.neoblockerBlocked && !el.dataset.neoblockerRevealed) {
-          targets.add(el)
+      mutationTimeout = window.requestAnimationFrame(() => {
+        mutationTimeout = null;
+        selfHeal()
+
+        if (isOnShortsPage()) {
+          processShortsPlayer()
+          return
         }
+
+        // Regular page: collect changed card/comment nodes and process them
+        const targets = new Set<HTMLElement>()
+        document.querySelectorAll<HTMLElement>(CONTENT_SELECTORS).forEach((el) => {
+          if (!el.dataset.neoblockerBlocked && !el.dataset.neoblockerRevealed) {
+            targets.add(el)
+          }
+        })
+        targets.forEach(processElement)
       })
-      targets.forEach(processElement)
     })
 
     // Initial scan
@@ -721,14 +738,12 @@ const OverlayManager = () => {
 
 // ─── Utility: keyword helpers ─────────────────────────────────────────────────
 function matchesBannedKeyword(settings: any, ...texts: string[]): boolean {
-  const raw = typeof settings.bannedKeywords === "string" ? settings.bannedKeywords : ""
-  const keywords = raw.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+  const keywords = settings._parsedBannedKeywords || []
   return keywords.length > 0 && texts.some((t) => keywords.some((kw: string) => t.includes(kw)))
 }
 
 function matchesException(settings: any, ...texts: string[]): boolean {
-  const raw = typeof settings.exceptions === "string" ? settings.exceptions : ""
-  const keywords = raw.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+  const keywords = settings._parsedExceptions || []
   return keywords.length > 0 && texts.some((t) => keywords.some((kw: string) => t.includes(kw)))
 }
 

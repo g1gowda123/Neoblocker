@@ -4,6 +4,52 @@ import { getSettings } from "~utils/storage";
 // In-memory cache for analyzed videos to prevent duplicate network calls
 const videoAnalysisCache = new Map<string, { action: "LOCAL_BLOCK" | "SAFE"; reason?: string }>();
 
+function extractJsonFromHtml(html: string, marker: string): string | null {
+  const startIndex = html.indexOf(marker);
+  if (startIndex === -1) return null;
+
+  const jsonStart = startIndex + marker.length;
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+  let jsonEnd = -1;
+
+  for (let i = jsonStart; i < html.length; i++) {
+    const char = html[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') braceCount++;
+      if (char === '}') braceCount--;
+
+      if (braceCount === 0 && char === '}') {
+        jsonEnd = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (jsonEnd !== -1) {
+    return html.substring(jsonStart, jsonEnd);
+  }
+
+  return null;
+}
+
 function decodeHtmlEntities(str: string): string {
   return str
     .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)))
@@ -21,11 +67,17 @@ async function fetchVideoData(videoId: string): Promise<{ title: string; deepTex
     const html = await res.text();
 
     // 1. Get player response JSON
-    const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
-    if (!playerResponseMatch) {
+    const playerResponseJson = extractJsonFromHtml(html, "var ytInitialPlayerResponse = ");
+    if (!playerResponseJson) {
       return { title: "", deepText: "" };
     }
-    const playerResponse = JSON.parse(playerResponseMatch[1]);
+    let playerResponse;
+    try {
+      playerResponse = JSON.parse(playerResponseJson);
+    } catch (e) {
+      console.error("[Neoblocker] Failed to parse ytInitialPlayerResponse", e);
+      return { title: "", deepText: "" };
+    }
     const videoDetails = playerResponse.videoDetails || {};
     const title = videoDetails.title || "";
     const description = videoDetails.shortDescription || "";

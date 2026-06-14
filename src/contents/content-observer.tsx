@@ -196,7 +196,19 @@ const OverlayManager = () => {
   useEffect(() => {
     const loadSettings = () => {
       chrome.storage.local.get("neoblocker_settings", (res) => {
-        settingsRef.current = res?.neoblocker_settings || {}
+        const settings = res?.neoblocker_settings || {}
+
+        // Pre-parse comma-separated strings into cached arrays to avoid redundant
+        // string allocation and splitting during high-frequency mutation events.
+        const parseKeywords = (str: any) =>
+          typeof str === "string"
+            ? str.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean)
+            : []
+
+        settings._parsedBannedKeywords = parseKeywords(settings.bannedKeywords)
+        settings._parsedExceptions = parseKeywords(settings.exceptions)
+
+        settingsRef.current = settings
         const mode: "blur" | "remove" = settingsRef.current.filterMode || "blur"
         filterModeRef.current = mode
         setFilterMode(mode)
@@ -725,14 +737,12 @@ const OverlayManager = () => {
 
 // ─── Utility: keyword helpers ─────────────────────────────────────────────────
 function matchesBannedKeyword(settings: any, ...texts: string[]): boolean {
-  const raw = typeof settings.bannedKeywords === "string" ? settings.bannedKeywords : ""
-  const keywords = raw.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+  const keywords = settings._parsedBannedKeywords || []
   return keywords.length > 0 && texts.some((t) => keywords.some((kw: string) => t.includes(kw)))
 }
 
 function matchesException(settings: any, ...texts: string[]): boolean {
-  const raw = typeof settings.exceptions === "string" ? settings.exceptions : ""
-  const keywords = raw.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+  const keywords = settings._parsedExceptions || []
   return keywords.length > 0 && texts.some((t) => keywords.some((kw: string) => t.includes(kw)))
 }
 

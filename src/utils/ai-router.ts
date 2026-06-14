@@ -110,11 +110,13 @@ class ToxicityClassifier {
       });
     }
 
-    return this.initializationPromise;
+    await this.initializationPromise;
+    return this.instance;
   }
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.toxicity = "idle";
     broadcastStatus();
   }
@@ -184,11 +186,13 @@ class BiasClassifier {
       });
     }
 
-    return this.initializationPromise;
+    await this.initializationPromise;
+    return this.instance;
   }
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.bias = "idle";
     broadcastStatus();
   }

@@ -14,6 +14,56 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#39;/g, "'");
 }
 
+function extractJsonFromHtml(html: string, regexPattern: RegExp): any {
+  const match = html.match(regexPattern);
+  if (!match) return null;
+
+  // Find the exact index where the JSON object `{` starts
+  const jsonStart = html.indexOf('{', match.index);
+  if (jsonStart === -1) return null;
+
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = jsonStart; i < html.length; i++) {
+    const char = html[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          const jsonStr = html.substring(jsonStart, i + 1);
+          try {
+            return JSON.parse(jsonStr);
+          } catch (e) {
+            // Keep searching if we hit an invalid JSON block
+            continue;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 async function fetchVideoData(videoId: string): Promise<{ title: string; deepText: string }> {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
@@ -21,11 +71,10 @@ async function fetchVideoData(videoId: string): Promise<{ title: string; deepTex
     const html = await res.text();
 
     // 1. Get player response JSON
-    const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
-    if (!playerResponseMatch) {
+    const playerResponse = extractJsonFromHtml(html, /ytInitialPlayerResponse\s*=\s*{/);
+    if (!playerResponse) {
       return { title: "", deepText: "" };
     }
-    const playerResponse = JSON.parse(playerResponseMatch[1]);
     const videoDetails = playerResponse.videoDetails || {};
     const title = videoDetails.title || "";
     const description = videoDetails.shortDescription || "";

@@ -606,22 +606,26 @@ const OverlayManager = () => {
     }
 
     // ── MutationObserver ──────────────────────────────────────────────────────
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
     const observer = new MutationObserver(() => {
-      selfHeal()
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        selfHeal()
 
-      if (isOnShortsPage()) {
-        processShortsPlayer()
-        return
-      }
-
-      // Regular page: collect changed card/comment nodes and process them
-      const targets = new Set<HTMLElement>()
-      document.querySelectorAll<HTMLElement>(CONTENT_SELECTORS).forEach((el) => {
-        if (!el.dataset.neoblockerBlocked && !el.dataset.neoblockerRevealed) {
-          targets.add(el)
+        if (isOnShortsPage()) {
+          processShortsPlayer()
+          return
         }
-      })
-      targets.forEach(processElement)
+
+        // Regular page: collect changed card/comment nodes and process them
+        const targets = new Set<HTMLElement>()
+        document.querySelectorAll<HTMLElement>(CONTENT_SELECTORS).forEach((el) => {
+          if (!el.dataset.neoblockerBlocked && !el.dataset.neoblockerRevealed) {
+            targets.add(el)
+          }
+        })
+        targets.forEach(processElement)
+      }, 100) // Debounce DOM queries to prevent main thread blocking
     })
 
     // Initial scan

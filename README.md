@@ -1,21 +1,21 @@
 # Neoblocker
 
-I built Neoblocker to function as an intelligent, offline content firewall directly inside the browser. Traditional static blocklists often miss context, so I designed this extension to run machine learning models locally. It analyzes page text in real-time and dynamically filters out unwanted content before it renders on your screen.
+I built Neoblocker to solve a specific problem: static content filters are dumb. They miss the context of what you're reading. I designed this extension as an offline, intelligent firewall that runs directly inside your browser. It uses local machine learning to analyze DOM text in real-time and dynamically strip out toxic content, hate speech, bias, and clickbait before it hits your screen.
 
 ## Key Features
 
-- **Local Inference:** All text analysis happens entirely within the browser. I implemented this to ensure zero external API calls are made, meaning your browsing data never leaves your machine.
-- **Shadow DOM Isolation:** The extension UI renders securely inside a Shadow DOM using React's `createPortal`. We handle UI injection this way to prevent our CSS from leaking out or getting overwritten by the host page's stylesheets.
-- **Dynamic CSS Scoping:** To guarantee predictable styling across completely different websites, the extension transforms Tailwind CSS on the fly. It does this by replacing `:root` selectors with `:host(plasmo-csui)` and automatically converting `rem` units to `px` against a strict 16px baseline.
+- **Local Inference:** All text classification happens locally using WebAssembly. I specifically built it this way so zero external API calls are made—your browsing data stays completely on your machine.
+- **Shadow DOM Isolation:** The UI is injected into the host page but rendered securely inside a Shadow DOM via React's `createPortal`. This guarantees that our extension's CSS doesn't leak out and host page styles don't unexpectedly overwrite our components.
+- **Dynamic CSS Scoping:** To ensure consistent styling across arbitrary websites, the extension processes Tailwind CSS on the fly. It replaces `:root` selectors with `:host(plasmo-csui)` and converts `rem` to `px` based on a strict 16px baseline.
 
 ## Tech Stack & Rationale
 
-I selected this stack to keep extension development predictable while maintaining a flexible, robust injected UI:
+I chose these tools to balance a predictable extension build process with the complexity of rendering a robust injected UI:
 
-- **Plasmo:** I use Plasmo as the foundational build system. It handles the underlying architecture, abstracting away the heavy boilerplate required for Manifest V3 generation and enabling reliable hot-reloading.
-- **React:** React manages the state and rendering logic. It is critical here for handling the complex lifecycle of injected UI components isolated within the Shadow DOM.
-- **TailwindCSS:** I chose Tailwind to accelerate styling. By layering custom processing logic on top, we prevent CSS conflicts between the extension and the unpredictable styles of host websites.
-- **@xenova/transformers:** This package serves as the core logic engine. It allows the extension to run machine learning models locally via WebAssembly, powering the real-time content filtering without needing a backend server.
+- **Plasmo:** The core build system. It handles the heavy boilerplate required for Manifest V3 and provides reliable hot-reloading out of the box.
+- **React:** Manages state and rendering. It handles the complex lifecycles of the UI components we inject into the Shadow DOM.
+- **TailwindCSS:** Speeds up the styling process. Layered with custom CSS scoping logic, it prevents conflicts with unpredictable host styles.
+- **@xenova/transformers:** The logic engine. It enables us to run machine learning models locally via WebAssembly, removing the need for an external backend to process real-time text.
 
 ## Setup & Usage
 

@@ -142,6 +142,22 @@ const COMMENT_SELECTORS = [
 
 const CONTENT_SELECTORS = CARD_SELECTORS + ", " + COMMENT_SELECTORS
 
+// Bolt Optimization: Pre-compute selectors that offload exclusion filtering directly to the browser's native C++ engine.
+// This is significantly faster than querying all elements and filtering iteratively via JavaScript dataset properties.
+const UNPROCESSED_CARD_SELECTORS = CARD_SELECTORS.split(", ")
+  .map(
+    (s) =>
+      `${s.trim()}:not([data-neoblocker-blocked="true"]):not([data-neoblocker-revealed="true"])`
+  )
+  .join(", ")
+
+const UNPROCESSED_CONTENT_SELECTORS = CONTENT_SELECTORS.split(", ")
+  .map(
+    (s) =>
+      `${s.trim()}:not([data-neoblocker-blocked="true"]):not([data-neoblocker-revealed="true"])`
+  )
+  .join(", ")
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Extract the 11-char video ID from any card element or the current URL (for Shorts player). */
@@ -297,12 +313,13 @@ const OverlayManager = () => {
   // ─── Block all DOM cards matching a videoId ─────────────────────────────────
   const blockCardsWithId = (videoId: string, reason: string) => {
     if (revealedVideoIds.current.has(videoId)) return
-    document.querySelectorAll<HTMLElement>(CARD_SELECTORS).forEach((el) => {
-      if (el.dataset.neoblockerBlocked === "true") return
-      if (getVideoId(el) === videoId) {
-        blockElement(el, reason, videoId)
-      }
-    })
+    document
+      .querySelectorAll<HTMLElement>(UNPROCESSED_CARD_SELECTORS)
+      .forEach((el) => {
+        if (getVideoId(el) === videoId) {
+          blockElement(el, reason, videoId)
+        }
+      })
   }
 
   // ─── Reveal handlers ────────────────────────────────────────────────────────
@@ -708,15 +725,8 @@ const OverlayManager = () => {
         // Regular page: collect changed card/comment nodes and process them
         const targets = new Set<HTMLElement>()
         document
-          .querySelectorAll<HTMLElement>(CONTENT_SELECTORS)
-          .forEach((el) => {
-            if (
-              !el.dataset.neoblockerBlocked &&
-              !el.dataset.neoblockerRevealed
-            ) {
-              targets.add(el)
-            }
-          })
+          .querySelectorAll<HTMLElement>(UNPROCESSED_CONTENT_SELECTORS)
+          .forEach((el) => targets.add(el))
         targets.forEach(processElement)
       }, 100) // Debounce DOM queries to prevent main thread blocking
     })
@@ -726,7 +736,7 @@ const OverlayManager = () => {
       processShortsPlayer()
     } else {
       document
-        .querySelectorAll<HTMLElement>(CONTENT_SELECTORS)
+        .querySelectorAll<HTMLElement>(UNPROCESSED_CONTENT_SELECTORS)
         .forEach(processElement)
     }
 

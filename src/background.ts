@@ -148,6 +148,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // ─── Analyze single text request (quick title/channel evaluation) ───────────
   if (request.action === "analyze") {
     const text: string = request.text;
+    if (typeof text !== 'string' || text.length > 50000) {
+      sendResponse({ action: "SAFE", error: "Analysis failed" });
+      return false;
+    }
     console.log(`[Neoblocker] Analyze text request: "${text.substring(0, 50)}..."`);
 
     getSettings()
@@ -157,7 +161,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
       .catch((err) => {
         console.error("[Neoblocker] Analysis pipeline error:", err);
-        sendResponse({ action: "SAFE", error: String(err) });
+        sendResponse({ action: "SAFE", error: "Analysis failed" });
       });
 
     return true; // Indicate async response
@@ -166,6 +170,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // ─── Prefetch and Analyze YouTube video ID ─────────────────────────────────
   if (request.action === "analyzeVideoId") {
     const videoId: string = request.videoId;
+    if (typeof videoId !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+      sendResponse({ action: "SAFE", error: "Analysis failed" });
+      return false;
+    }
 
     // Check cache first to avoid repeating network requests
     if (videoAnalysisCache.has(videoId)) {
@@ -204,7 +212,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
       .catch((err) => {
         console.error(`[Neoblocker] Analysis failed for video ${videoId}:`, err);
-        sendResponse({ action: "SAFE", error: String(err) });
+        sendResponse({ action: "SAFE", error: "Analysis failed" });
       });
 
     return true; // Indicate async response

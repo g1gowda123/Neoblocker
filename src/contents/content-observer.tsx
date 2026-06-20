@@ -142,6 +142,13 @@ const COMMENT_SELECTORS = [
 
 const CONTENT_SELECTORS = CARD_SELECTORS + ", " + COMMENT_SELECTORS
 
+const UNPROCESSED_CONTENT_SELECTORS = CONTENT_SELECTORS.split(",")
+  .map(
+    (s) =>
+      `${s.trim()}:not([data-neoblocker-blocked="true"]):not([data-neoblocker-revealed="true"])`
+  )
+  .join(", ")
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Extract the 11-char video ID from any card element or the current URL (for Shorts player). */
@@ -706,18 +713,9 @@ const OverlayManager = () => {
         }
 
         // Regular page: collect changed card/comment nodes and process them
-        const targets = new Set<HTMLElement>()
         document
-          .querySelectorAll<HTMLElement>(CONTENT_SELECTORS)
-          .forEach((el) => {
-            if (
-              !el.dataset.neoblockerBlocked &&
-              !el.dataset.neoblockerRevealed
-            ) {
-              targets.add(el)
-            }
-          })
-        targets.forEach(processElement)
+          .querySelectorAll<HTMLElement>(UNPROCESSED_CONTENT_SELECTORS)
+          .forEach(processElement)
       }, 100) // Debounce DOM queries to prevent main thread blocking
     })
 
@@ -726,7 +724,7 @@ const OverlayManager = () => {
       processShortsPlayer()
     } else {
       document
-        .querySelectorAll<HTMLElement>(CONTENT_SELECTORS)
+        .querySelectorAll<HTMLElement>(UNPROCESSED_CONTENT_SELECTORS)
         .forEach(processElement)
     }
 

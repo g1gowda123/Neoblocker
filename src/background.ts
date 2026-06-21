@@ -148,6 +148,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // ─── Analyze single text request (quick title/channel evaluation) ───────────
   if (request.action === "analyze") {
     const text: string = request.text;
+
+    // Security Enhancement: Input validation & DoS protection
+    // Limit text length to prevent memory exhaustion or regular expression DoS attacks
+    if (typeof text !== "string" || text.length > 5000) {
+      console.warn("[Neoblocker] Analyze request rejected: invalid or too long text.");
+      sendResponse({ action: "SAFE", error: "Invalid request payload" });
+      return false;
+    }
+
     console.log(`[Neoblocker] Analyze text request: "${text.substring(0, 50)}..."`);
 
     getSettings()
@@ -157,7 +166,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
       .catch((err) => {
         console.error("[Neoblocker] Analysis pipeline error:", err);
-        sendResponse({ action: "SAFE", error: String(err) });
+        // Security Enhancement: Fail securely, don't expose stack traces/internals to content script
+        sendResponse({ action: "SAFE", error: "Internal analysis error occurred" });
       });
 
     return true; // Indicate async response
@@ -166,6 +176,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // ─── Prefetch and Analyze YouTube video ID ─────────────────────────────────
   if (request.action === "analyzeVideoId") {
     const videoId: string = request.videoId;
+
+    // Security Enhancement: Input validation to prevent potential SSRF or injection
+    // Ensure videoId strictly matches expected YouTube ID format (alphanumeric, hyphens, underscores, exactly 11 chars)
+    if (typeof videoId !== "string" || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+      console.warn(`[Neoblocker] Invalid videoId provided: ${videoId}`);
+      sendResponse({ action: "SAFE", error: "Invalid video ID format" });
+      return false;
+    }
 
     // Check cache first to avoid repeating network requests
     if (videoAnalysisCache.has(videoId)) {
@@ -204,7 +222,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
       .catch((err) => {
         console.error(`[Neoblocker] Analysis failed for video ${videoId}:`, err);
-        sendResponse({ action: "SAFE", error: String(err) });
+        // Security Enhancement: Fail securely, don't expose stack traces/internals to content script
+        sendResponse({ action: "SAFE", error: "Internal analysis error occurred" });
       });
 
     return true; // Indicate async response

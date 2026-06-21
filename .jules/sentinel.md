@@ -1,5 +1,4 @@
-
-## 2024-05-18 - [Robust JSON Parsing over Regex]
-**Vulnerability:** Used non-greedy regex `/.+?/` to extract `ytInitialPlayerResponse` JSON from HTML strings. Attackers could bypass this by injecting `};` inside a string (e.g. video title), truncating the JSON and causing a parse failure or Denial of Service.
-**Learning:** Regex is not suitable for parsing complex nested structures like JSON, especially when they can contain arbitrary user input that mimics structural delimiters.
-**Prevention:** Use a robust, brace-matching algorithmic parser that tracks state (in-string, escaped characters, brace depth) to safely extract nested JSON blocks from larger strings.
+## 2024-06-13 - Extension Background Script Error Information Leakage and Lack of Validation
+**Vulnerability:** The extension `background.ts` handler was exposing internal exception details (`String(err)`) to content scripts across the extension message passing boundary, potentially leading to information disclosure. Further, parameters such as `videoId` and `text` were not validated or bounds-checked, allowing for arbitrary inputs (length unbounded or arbitrary strings) that could lead to DoS, memory exhaustion, SSRF or request smuggling down the line.
+**Learning:** Browser extension message passing must be treated as crossing a security boundary. Inputs received from content scripts running in the context of potentially hostile web pages must be strictly validated. Errors propagated back over message passing should be generic to prevent leaking stack traces or internal implementation details.
+**Prevention:** Always validate and bound inputs in background service workers using explicit typing, regex validation, and length constraints. Return generic, safe error messages to content scripts to prevent internal information leakage.

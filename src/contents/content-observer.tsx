@@ -148,6 +148,10 @@ const UNPROCESSED_CONTENT_SELECTORS = CONTENT_SELECTORS.split(",")
   )
   .join(", ")
 
+const UNBLOCKED_CARD_SELECTORS = CARD_SELECTORS.split(",")
+  .map((s) => `${s.trim()}:not([data-neoblocker-blocked="true"])`)
+  .join(", ")
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Extract the 11-char video ID from any card element or the current URL (for Shorts player). */
@@ -303,12 +307,13 @@ const OverlayManager = () => {
   // ─── Block all DOM cards matching a videoId ─────────────────────────────────
   const blockCardsWithId = (videoId: string, reason: string) => {
     if (revealedVideoIds.current.has(videoId)) return
-    document.querySelectorAll<HTMLElement>(CARD_SELECTORS).forEach((el) => {
-      if (el.dataset.neoblockerBlocked === "true") return
-      if (getVideoId(el) === videoId) {
-        blockElement(el, reason, videoId)
-      }
-    })
+    document
+      .querySelectorAll<HTMLElement>(UNBLOCKED_CARD_SELECTORS)
+      .forEach((el) => {
+        if (getVideoId(el) === videoId) {
+          blockElement(el, reason, videoId)
+        }
+      })
   }
 
   // ─── Reveal handlers ────────────────────────────────────────────────────────
@@ -373,7 +378,9 @@ const OverlayManager = () => {
       // Fan out Shorts shelves to each reel item
       if (target.tagName === "YTD-REEL-SHELF-RENDERER") {
         target
-          .querySelectorAll<HTMLElement>("ytd-reel-item-renderer")
+          .querySelectorAll<HTMLElement>(
+            "ytd-reel-item-renderer:not([data-neoblocker-blocked]):not([data-neoblocker-revealed])"
+          )
           .forEach(processElement)
         return
       }

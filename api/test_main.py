@@ -5,6 +5,24 @@ from api.main import app
 
 client = TestClient(app)
 
+def test_verify_ssrf_prevention_invalid_scheme():
+    response = client.post("/verify", json={"text": "Test", "source_url": "file:///etc/passwd"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid or unsafe source URL provided."}
+
+def test_verify_ssrf_prevention_localhost():
+    response = client.post("/verify", json={"text": "Test", "source_url": "http://127.0.0.1:8080/admin"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid or unsafe source URL provided."}
+
+@patch('api.main.socket.gethostbyname')
+def test_verify_ssrf_prevention_private_ip(mock_dns):
+    # Mock DNS resolution to return a private IP for a seemingly normal domain
+    mock_dns.return_value = "10.0.0.5"
+    response = client.post("/verify", json={"text": "Test", "source_url": "http://normal-domain.com/data"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid or unsafe source URL provided."}
+
 @patch('api.main.genai.Client')
 def test_verify_json_decode_error(mock_genai_client):
     # Setup mock to return invalid JSON

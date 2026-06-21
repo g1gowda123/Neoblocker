@@ -5,10 +5,36 @@ from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
 from dotenv import load_dotenv
+import socket
+from urllib.parse import urlparse
+import ipaddress
 
 load_dotenv()
 
 app = FastAPI()
+
+def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # Attempt to resolve the hostname
+        ip = socket.gethostbyname(hostname)
+        ip_obj = ipaddress.ip_address(ip)
+
+        # Block private, loopback, multicast, etc.
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_multicast or ip_obj.is_link_local or ip_obj.is_reserved:
+            return False
+
+        return True
+    except Exception:
+        # If parsing or resolution fails, consider it unsafe
+        return False
 
 class VerifyRequest(BaseModel):
     text: str
@@ -23,6 +49,9 @@ async def verify_content(request: VerifyRequest):
     context_markdown = ""
 
     if request.source_url:
+        if not is_safe_url(request.source_url):
+            raise HTTPException(status_code=400, detail="Invalid or unsafe source URL provided.")
+
         try:
             async with AsyncWebCrawler() as crawler:
                 result = await crawler.arun(url=request.source_url)

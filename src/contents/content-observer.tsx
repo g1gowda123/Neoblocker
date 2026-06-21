@@ -141,6 +141,12 @@ const COMMENT_SELECTORS = [
 ].join(", ")
 
 const CONTENT_SELECTORS = CARD_SELECTORS + ", " + COMMENT_SELECTORS
+const UNPROCESSED_CONTENT_SELECTORS = CONTENT_SELECTORS.split(",")
+  .map(
+    (s) =>
+      `${s.trim()}:not([data-neoblocker-blocked]):not([data-neoblocker-revealed])`
+  )
+  .join(", ")
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -708,14 +714,9 @@ const OverlayManager = () => {
         // Regular page: collect changed card/comment nodes and process them
         const targets = new Set<HTMLElement>()
         document
-          .querySelectorAll<HTMLElement>(CONTENT_SELECTORS)
+          .querySelectorAll<HTMLElement>(UNPROCESSED_CONTENT_SELECTORS)
           .forEach((el) => {
-            if (
-              !el.dataset.neoblockerBlocked &&
-              !el.dataset.neoblockerRevealed
-            ) {
-              targets.add(el)
-            }
+            targets.add(el)
           })
         targets.forEach(processElement)
       }, 100) // Debounce DOM queries to prevent main thread blocking
@@ -726,7 +727,7 @@ const OverlayManager = () => {
       processShortsPlayer()
     } else {
       document
-        .querySelectorAll<HTMLElement>(CONTENT_SELECTORS)
+        .querySelectorAll<HTMLElement>(UNPROCESSED_CONTENT_SELECTORS)
         .forEach(processElement)
     }
 

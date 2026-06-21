@@ -14,6 +14,43 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#39;/g, "'");
 }
 
+function extractJsonBlock(html: string, varName: string): string | null {
+  const regex = new RegExp(`${varName}\\s*=\\s*({)`);
+  const match = regex.exec(html);
+  if (!match) return null;
+
+  const startIndex = match.index + match[0].length - 1; // Index of the opening brace '{'
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIndex; i < html.length; i++) {
+    const char = html[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === '\\') {
+        escape = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+    } else {
+      if (char === '"') {
+        inString = true;
+      } else if (char === '{') {
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          return html.slice(startIndex, i + 1);
+        }
+      }
+    }
+  }
+  return null;
+}
+
 async function fetchVideoData(videoId: string): Promise<{ title: string; deepText: string }> {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
@@ -21,11 +58,11 @@ async function fetchVideoData(videoId: string): Promise<{ title: string; deepTex
     const html = await res.text();
 
     // 1. Get player response JSON
-    const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
-    if (!playerResponseMatch) {
+    const playerResponseJson = extractJsonBlock(html, "ytInitialPlayerResponse");
+    if (!playerResponseJson) {
       return { title: "", deepText: "" };
     }
-    const playerResponse = JSON.parse(playerResponseMatch[1]);
+    const playerResponse = JSON.parse(playerResponseJson);
     const videoDetails = playerResponse.videoDetails || {};
     const title = videoDetails.title || "";
     const description = videoDetails.shortDescription || "";

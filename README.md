@@ -1,44 +1,46 @@
 # Neoblocker
 
-I built Neoblocker to function as an intelligent, offline content firewall directly inside the browser. Traditional static blocklists often miss context, so I designed this extension to run machine learning models locally. It analyzes page text in real-time and dynamically filters out unwanted content before it renders on your screen.
+I built Neoblocker to act as an offline content firewall right inside your browser. Static blocklists miss nuance and context, so I designed this extension to run machine learning models locally via WebAssembly. It analyzes page text in real-time, catching and filtering unwanted content before it even renders on your screen.
 
 ## Key Features
 
-- **Local Inference:** All text analysis happens entirely within the browser. I implemented this to ensure zero external API calls are made, meaning your browsing data never leaves your machine.
-- **Shadow DOM Isolation:** The extension UI renders securely inside a Shadow DOM using React's `createPortal`. We handle UI injection this way to prevent our CSS from leaking out or getting overwritten by the host page's stylesheets.
-- **Dynamic CSS Scoping:** To guarantee predictable styling across completely different websites, the extension transforms Tailwind CSS on the fly. It does this by replacing `:root` selectors with `:host(plasmo-csui)` and automatically converting `rem` units to `px` against a strict 16px baseline.
+- **Local Inference:** I wanted to make sure your browsing data never leaves your machine. All text analysis happens securely inside the browser with zero external API calls.
+- **Shadow DOM Isolation:** I inject the extension UI securely into a Shadow DOM using React's `createPortal`. This strictly scopes the UI, preventing our CSS from leaking out or getting broken by the host page's arbitrary stylesheets.
+- **Dynamic CSS Scoping:** To ensure consistent styling across highly variable host websites, I built in logic to transform Tailwind CSS on the fly. It replaces `:root` selectors with `:host(plasmo-csui)` and converts `rem` units to `px` against a fixed 16px baseline.
 
 ## Tech Stack & Rationale
 
-I selected this stack to keep extension development predictable while maintaining a flexible, robust injected UI:
+I put this stack together to keep the extension architecture predictable while supporting a complex injected UI:
 
-- **Plasmo:** I use Plasmo as the foundational build system. It handles the underlying architecture, abstracting away the heavy boilerplate required for Manifest V3 generation and enabling reliable hot-reloading.
-- **React:** React manages the state and rendering logic. It is critical here for handling the complex lifecycle of injected UI components isolated within the Shadow DOM.
-- **TailwindCSS:** I chose Tailwind to accelerate styling. By layering custom processing logic on top, we prevent CSS conflicts between the extension and the unpredictable styles of host websites.
-- **@xenova/transformers:** This package serves as the core logic engine. It allows the extension to run machine learning models locally via WebAssembly, powering the real-time content filtering without needing a backend server.
+- **Plasmo:** I use this as the core build system. It strips away the heavy boilerplate needed for Manifest V3 generation and gives us reliable hot-reloading out of the box.
+- **React:** This handles our state and rendering. Dealing with the lifecycle of injected components inside a Shadow DOM is tricky, and React gives me the robust component model needed to manage it smoothly.
+- **TailwindCSS:** I reach for Tailwind to move fast on styling. By layering custom CSS processing over it, we prevent nasty style collisions between the extension and the sites it runs on.
+- **@xenova/transformers:** This is the core logic engine. It lets us execute machine learning models locally through WebAssembly, entirely removing the need for a backend server to handle real-time content filtering.
 
 ## Setup & Usage
 
-To build and run the project locally, follow these steps:
+To get the project running locally, grab the code and install the dependencies:
 
-1. Install the dependencies:
 ```bash
 npm install
 ```
 
-2. Start the development server:
+Start up the development server:
+
 ```bash
 npm run dev
 ```
 
-Once the dev server is running, load the unpacked extension into your browser. For Chrome:
-- Navigate to the extensions page.
+With the dev server running, you can load the unpacked extension into Chrome:
+- Open your extensions page.
 - Toggle **Developer mode** on.
 - Click **Load unpacked**.
-- Select the `build/chrome-mv3-dev` directory.
+- Point it to the generated `build/chrome-mv3-dev` directory.
 
-To create an optimized production build, run:
+When you are ready to cut a release, build the optimized production bundle:
+
 ```bash
 npm run build
 ```
-This generates the final bundle ready to zip and publish.
+
+This generates the final assets required to zip and publish the extension.

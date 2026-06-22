@@ -7,3 +7,6 @@
 ## 2026-06-17 - Native CSS Engine Filtering over JS
 **Learning:** In a highly dynamic environment like an infinite-scrolling SPA (e.g., YouTube), calling `document.querySelectorAll()` repeatedly returns an ever-growing NodeList. Iterating through thousands of elements in JavaScript to filter out already-processed nodes (e.g., checking `dataset.blocked`) becomes a severe CPU bottleneck.
 **Action:** Always offload large-scale element exclusion filtering to the browser's native C++ rendering engine. Instead of iterating in JS, append `:not([data-attr])` pseudo-classes directly to the `querySelectorAll` string. This reduces O(N) JavaScript operations to O(new_elements), yielding massive performance gains.
+## 2026-06-22 - Memory Allocations in Hot Paths
+**Learning:** Re-parsing settings into arrays (e.g. `settings.exceptions.split(",")`) inside a frequently called hot path function like `analyzeContent` causes unnecessary memory allocations and CPU thrashing over thousands of text blocks.
+**Action:** Always pre-parse configuration strings into arrays once outside the function scope and cache them. Update the cache only when the raw string configuration changes. Also hoist static array variables (like `HATE_KEYWORDS`) out of the function scope so they are evaluated only once.

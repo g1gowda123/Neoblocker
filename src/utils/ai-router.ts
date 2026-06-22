@@ -64,7 +64,7 @@ export class NanoClassifier {
     if (!this.sessionPromise) {
       this.sessionPromise = (window as any).ai.createTextSession();
     }
-    return this.sessionPromise;
+    return await this.sessionPromise;
   }
 
   static async analyze(text: string) {
@@ -110,11 +110,12 @@ class ToxicityClassifier {
       });
     }
 
-    return this.initializationPromise;
+    return await this.initializationPromise;
   }
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.toxicity = "idle";
     broadcastStatus();
   }
@@ -184,11 +185,12 @@ class BiasClassifier {
       });
     }
 
-    return this.initializationPromise;
+    return await this.initializationPromise;
   }
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.bias = "idle";
     broadcastStatus();
   }

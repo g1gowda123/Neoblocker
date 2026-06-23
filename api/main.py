@@ -4,9 +4,42 @@ from typing import Optional
 from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
+from urllib.parse import urlparse
+import ipaddress
+import socket
+import asyncio
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+async def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        loop = asyncio.get_running_loop()
+        # Non-blocking DNS resolution
+        addr_info = await loop.getaddrinfo(hostname, None)
+        # addr_info returns a list of tuples: (family, type, proto, canonname, sockaddr)
+        # sockaddr for IPv4 is (address, port)
+        ip_addr = addr_info[0][4][0]
+
+        ip = ipaddress.ip_address(ip_addr)
+
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified:
+            return False
+
+        return True
+    except Exception as e:
+        print(f"URL validation failed: {e}")
+        return False
 
 app = FastAPI()
 
@@ -23,14 +56,17 @@ async def verify_content(request: VerifyRequest):
     context_markdown = ""
 
     if request.source_url:
-        try:
-            async with AsyncWebCrawler() as crawler:
-                result = await crawler.arun(url=request.source_url)
-                # The result contains markdown string of the scraped page
-                context_markdown = result.markdown
-        except Exception as e:
-            print(f"Error crawling URL {request.source_url}: {e}")
-            # Proceed without context or fail. We proceed for resilience.
+        if not await is_safe_url(request.source_url):
+            print(f"Blocked unsafe URL: {request.source_url}")
+        else:
+            try:
+                async with AsyncWebCrawler() as crawler:
+                    result = await crawler.arun(url=request.source_url)
+                    # The result contains markdown string of the scraped page
+                    context_markdown = result.markdown
+            except Exception as e:
+                print(f"Error crawling URL {request.source_url}: {e}")
+                # Proceed without context or fail. We proceed for resilience.
 
     try:
         # Initialize GenAI client

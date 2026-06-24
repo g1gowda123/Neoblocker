@@ -7,3 +7,6 @@
 ## 2026-06-17 - Native CSS Engine Filtering over JS
 **Learning:** In a highly dynamic environment like an infinite-scrolling SPA (e.g., YouTube), calling `document.querySelectorAll()` repeatedly returns an ever-growing NodeList. Iterating through thousands of elements in JavaScript to filter out already-processed nodes (e.g., checking `dataset.blocked`) becomes a severe CPU bottleneck.
 **Action:** Always offload large-scale element exclusion filtering to the browser's native C++ rendering engine. Instead of iterating in JS, append `:not([data-attr])` pseudo-classes directly to the `querySelectorAll` string. This reduces O(N) JavaScript operations to O(new_elements), yielding massive performance gains.
+## 2026-06-24 - Settings Parsing in Background Worker
+**Learning:** Parsing comma-separated string settings into arrays inside frequently called background functions (like `analyzeContent`) causes unnecessary string allocations and CPU thrashing.
+**Action:** Always pre-parse configuration strings into arrays once and cache them at the module level. Update the cache only when the raw string configuration changes.

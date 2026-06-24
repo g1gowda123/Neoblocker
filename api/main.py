@@ -4,11 +4,38 @@ from typing import Optional
 from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
+import urllib.parse
+import ipaddress
+import asyncio
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = FastAPI()
+
+async def is_safe_url(url: str) -> bool:
+    """Validates URLs to prevent SSRF attacks."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        loop = asyncio.get_running_loop()
+        # Resolve hostname asynchronously to avoid blocking the event loop
+        addr_info = await loop.getaddrinfo(hostname, None)
+
+        for info in addr_info:
+            ip = info[4][0]
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+                return False
+        return True
+    except Exception:
+        return False
 
 class VerifyRequest(BaseModel):
     text: str
@@ -23,6 +50,9 @@ async def verify_content(request: VerifyRequest):
     context_markdown = ""
 
     if request.source_url:
+        if not await is_safe_url(request.source_url):
+            raise HTTPException(status_code=400, detail="Invalid or unsafe source_url provided")
+
         try:
             async with AsyncWebCrawler() as crawler:
                 result = await crawler.arun(url=request.source_url)

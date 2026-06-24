@@ -44,3 +44,9 @@ comm_response.json
 next_response.json
 test-toxic.js
 
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

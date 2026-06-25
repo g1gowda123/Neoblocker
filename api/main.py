@@ -5,6 +5,10 @@ from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
 from dotenv import load_dotenv
+import asyncio
+import socket
+import ipaddress
+from urllib.parse import urlparse
 
 load_dotenv()
 
@@ -18,11 +22,37 @@ class VerifyResponse(BaseModel):
     is_threat: bool
     reframe: str
 
+async def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        loop = asyncio.get_running_loop()
+        # Use getaddrinfo to resolve hostname without blocking
+        addr_info = await loop.getaddrinfo(hostname, None)
+
+        for info in addr_info:
+            ip_str = info[4][0]
+            ip = ipaddress.ip_address(ip_str)
+            # Check against unsafe internal networks
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+                return False
+        return True
+    except Exception as e:
+        print(f"Error checking {url}: {e}")
+        return False
+
 @app.post("/verify", response_model=VerifyResponse)
 async def verify_content(request: VerifyRequest):
     context_markdown = ""
 
     if request.source_url:
+        if not await is_safe_url(request.source_url):
+            raise HTTPException(status_code=400, detail="Invalid or unsafe URL provided")
         try:
             async with AsyncWebCrawler() as crawler:
                 result = await crawler.arun(url=request.source_url)

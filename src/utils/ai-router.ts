@@ -115,6 +115,7 @@ class ToxicityClassifier {
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.toxicity = "idle";
     broadcastStatus();
   }
@@ -189,6 +190,7 @@ class BiasClassifier {
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.bias = "idle";
     broadcastStatus();
   }

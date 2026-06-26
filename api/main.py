@@ -5,6 +5,10 @@ from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
 from dotenv import load_dotenv
+import asyncio
+import ipaddress
+from urllib.parse import urlparse
+import socket
 
 load_dotenv()
 
@@ -18,14 +22,44 @@ class VerifyResponse(BaseModel):
     is_threat: bool
     reframe: str
 
+async def validate_url(url: str) -> str:
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Invalid URL: missing hostname")
+
+    loop = asyncio.get_running_loop()
+    # non-blocking resolution
+    addr_infos = await loop.getaddrinfo(hostname, None)
+
+    safe = False
+    for info in addr_infos:
+        ip_str = info[4][0]
+        ip = ipaddress.ip_address(ip_str)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+            raise ValueError(f"Unsafe IP address detected: {ip_str}")
+        safe = True
+
+    if not safe:
+        raise ValueError("Could not resolve safe IP address")
+
+    return url
+
 @app.post("/verify", response_model=VerifyResponse)
 async def verify_content(request: VerifyRequest):
     context_markdown = ""
 
     if request.source_url:
         try:
+            valid_url = await validate_url(request.source_url)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Invalid URL")
+
+        try:
             async with AsyncWebCrawler() as crawler:
-                result = await crawler.arun(url=request.source_url)
+                result = await crawler.arun(url=valid_url)
                 # The result contains markdown string of the scraped page
                 context_markdown = result.markdown
         except Exception as e:

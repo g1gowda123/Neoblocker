@@ -4,6 +4,10 @@ from typing import Optional
 from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
+import asyncio
+import urllib.parse
+import ipaddress
+import socket
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,12 +22,42 @@ class VerifyResponse(BaseModel):
     is_threat: bool
     reframe: str
 
+async def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        loop = asyncio.get_running_loop()
+        # Non-blocking DNS resolution to prevent basic SSRF to internal IPs
+        # Note: This does not prevent TOCTOU/DNS rebinding attacks since the crawler resolves DNS again.
+        addr_info = await loop.getaddrinfo(hostname, None)
+
+        for _, _, _, _, sockaddr in addr_info:
+            ip = sockaddr[0]
+            ip_obj = ipaddress.ip_address(ip)
+            # Prevent accessing private, loopback, or internal networks
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+                return False
+
+        return True
+    except Exception as e:
+        print(f"Error resolving URL {url}: {e}")
+        return False
+
 @app.post("/verify", response_model=VerifyResponse)
 async def verify_content(request: VerifyRequest):
     context_markdown = ""
 
     if request.source_url:
         try:
+            if not await is_safe_url(request.source_url):
+                raise ValueError("URL points to a private or disallowed network address.")
+
             async with AsyncWebCrawler() as crawler:
                 result = await crawler.arun(url=request.source_url)
                 # The result contains markdown string of the scraped page

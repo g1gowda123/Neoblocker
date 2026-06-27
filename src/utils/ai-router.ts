@@ -115,6 +115,7 @@ class ToxicityClassifier {
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.toxicity = "idle";
     broadcastStatus();
   }
@@ -189,6 +190,7 @@ class BiasClassifier {
 
   static unload() {
     this.instance = null;
+    this.initializationPromise = null;
     modelStatuses.bias = "idle";
     broadcastStatus();
   }
@@ -233,6 +235,8 @@ const SAFE_CONTEXT_REGEX = new RegExp(
 function normalizeText(str: string): string {
   return str.replace(/\s+/g, " ").trim();
 }
+
+const HATE_KEYWORDS = ["kkk", "white supremacist", "grand wizard", "neo-nazi", "racist", "racism"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Entry Point: analyzeContent
@@ -293,8 +297,7 @@ export async function analyzeContent(
   const sexual_explicit = toxScores["sexual_explicit"] || 0;
 
   // Elevate identity attack score for explicit hate speech/extremist keywords (e.g. kkk, white supremacist, grand wizard, racist)
-  const hateKeywords = ["kkk", "white supremacist", "grand wizard", "neo-nazi", "racist", "racism"];
-  const hasHateKeyword = hateKeywords.some((kw) => lowerText.includes(kw));
+  const hasHateKeyword = HATE_KEYWORDS.some((kw) => lowerText.includes(kw));
   if (hasHateKeyword && settings.enableToxicity) {
     console.log("[Neoblocker] Hate/racism topic keyword detected. Elevating identity_attack score to 0.85.");
     identity_attack = Math.max(identity_attack, 0.85);

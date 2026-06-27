@@ -7,3 +7,6 @@
 ## 2026-06-17 - Native CSS Engine Filtering over JS
 **Learning:** In a highly dynamic environment like an infinite-scrolling SPA (e.g., YouTube), calling `document.querySelectorAll()` repeatedly returns an ever-growing NodeList. Iterating through thousands of elements in JavaScript to filter out already-processed nodes (e.g., checking `dataset.blocked`) becomes a severe CPU bottleneck.
 **Action:** Always offload large-scale element exclusion filtering to the browser's native C++ rendering engine. Instead of iterating in JS, append `:not([data-attr])` pseudo-classes directly to the `querySelectorAll` string. This reduces O(N) JavaScript operations to O(new_elements), yielding massive performance gains.
+## 2026-06-25 - Memory Optimization for Keyword Matching
+**Learning:** Initializing arrays like `hateKeywords` inside high-frequency functions (e.g., `analyzeContent`) causes repetitive string allocations and garbage collection overhead on every invocation. Similarly, splitting and mapping configuration strings on every loop iteration wastes CPU cycles.
+**Action:** Hoist static keyword arrays outside of function scopes to the module level. Pre-parse configuration strings and cache them in arrays, recalculating only when the underlying configuration string explicitly changes.

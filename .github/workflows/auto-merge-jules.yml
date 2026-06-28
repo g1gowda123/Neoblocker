@@ -8,8 +8,8 @@ jobs:
   auto-merge:
     runs-on: ubuntu-latest
     
-    # Filters pull requests so it only runs if the source branch starts with "jules/"
-    if: startsWith(github.head_ref, 'jules/')
+    # Matches branches starting with "jules/" or "jules-"
+    if: startsWith(github.head_ref, 'jules/') || startsWith(github.head_ref, 'jules-')
     
     steps:
       - name: Auto-approve PR

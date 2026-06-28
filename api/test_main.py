@@ -25,3 +25,35 @@ def test_verify_json_decode_error(mock_genai_client):
     # Assertions
     assert response.status_code == 500
     assert response.json() == {"detail": "Failed to parse LLM response"}
+
+def test_verify_ssrf_file_scheme():
+    # Make request with file:// scheme
+    response = client.post("/verify", json={"text": "Test text", "source_url": "file:///etc/passwd"})
+
+    # Assertions
+    assert response.status_code == 400
+    assert "Invalid URL scheme" in response.json()["detail"]
+
+def test_verify_ssrf_internal_ip():
+    # Make request with AWS metadata IP
+    response = client.post("/verify", json={"text": "Test text", "source_url": "http://169.254.169.254/latest/meta-data/"})
+
+    # Assertions
+    assert response.status_code == 400
+    assert "Internal or forbidden hostnames are not allowed" in response.json()["detail"]
+
+def test_verify_ssrf_localhost():
+    # Make request with localhost
+    response = client.post("/verify", json={"text": "Test text", "source_url": "http://localhost:8080/admin"})
+
+    # Assertions
+    assert response.status_code == 400
+    assert "Internal or forbidden hostnames are not allowed" in response.json()["detail"]
+
+def test_verify_ssrf_obscure_ip():
+    # Make request with obscure IP format (127.1 bypass)
+    response = client.post("/verify", json={"text": "Test text", "source_url": "http://127.1/admin"})
+
+    # Assertions
+    assert response.status_code == 400
+    assert "Internal or forbidden hostnames are not allowed" in response.json()["detail"]

@@ -4,6 +4,9 @@ from typing import Optional
 from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
+from urllib.parse import urlparse
+import socket
+import ipaddress
 import logging
 from dotenv import load_dotenv
 
@@ -32,6 +35,28 @@ async def verify_content(request: VerifyRequest):
     context_markdown = ""
 
     if request.source_url:
+        parsed_url = urlparse(request.source_url)
+        if parsed_url.scheme not in ["http", "https"]:
+            raise HTTPException(status_code=400, detail="Invalid URL scheme. Only HTTP and HTTPS are allowed.")
+
+        if not parsed_url.hostname:
+            raise HTTPException(status_code=400, detail="Invalid URL: Missing hostname.")
+
+        try:
+            # Resolve the hostname to an IP address
+            ip_str = socket.gethostbyname(parsed_url.hostname)
+            ip_obj = ipaddress.ip_address(ip_str)
+
+            # Block private, loopback, and link-local (e.g., AWS metadata 169.254.169.254) networks
+            # Note: DNS rebinding attacks (TOCTOU) are still theoretically possible unless DNS resolution
+            # is pinned inside the AsyncWebCrawler, but this blocks the most common SSRF attempts.
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+                raise HTTPException(status_code=400, detail="Internal or forbidden hostnames are not allowed.")
+        except socket.gaierror:
+            raise HTTPException(status_code=400, detail="Could not resolve hostname.")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid IP address format.")
+
         try:
             async with AsyncWebCrawler() as crawler:
                 result = await crawler.arun(url=request.source_url)

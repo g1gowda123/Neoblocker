@@ -8,9 +8,8 @@ jobs:
   auto-merge:
     runs-on: ubuntu-latest
     
-    # Note: If Jules authenticates via your OAuth token, it may open PRs under your username ('g1gowda123').
-    # To avoid auto-merging your own manual PRs, it is safer to filter by a label (e.g., 'jules-ai').
-    if: contains(github.event.pull_request.labels.*.name, 'jules-ai') || github.event.pull_request.user.login == 'jules[bot]'
+    # Filters pull requests so it only runs if the source branch starts with "jules/"
+    if: startsWith(github.head_ref, 'jules/')
     
     steps:
       - name: Auto-approve PR

@@ -4,9 +4,18 @@ from typing import Optional
 from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def sanitize_log(text: str) -> str:
+    if text is None:
+        return "None"
+    return str(text).replace('\n', '\\n').replace('\r', '\\r')
 
 app = FastAPI()
 
@@ -29,7 +38,7 @@ async def verify_content(request: VerifyRequest):
                 # The result contains markdown string of the scraped page
                 context_markdown = result.markdown
         except Exception as e:
-            print(f"Error crawling URL {request.source_url}: {e}")
+            logger.error(f"Error crawling URL {sanitize_log(request.source_url)}: {e}")
             # Proceed without context or fail. We proceed for resilience.
 
     try:
@@ -85,8 +94,8 @@ async def verify_content(request: VerifyRequest):
         )
 
     except json.JSONDecodeError as e:
-        print(f"JSON Parsing Error: {e}\nResponse text was: {response.text}")
+        logger.error(f"JSON Parsing Error: {e} | Response text was: {sanitize_log(response.text)}")
         raise HTTPException(status_code=500, detail="Failed to parse LLM response")
     except Exception as e:
-        print(f"GenAI Error: {e}")
+        logger.error(f"GenAI Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error during verification")

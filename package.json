@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "A fully offline, cross-browser AI extension that detects and blocks toxic content, hate speech, bias, and clickbait using local WASM models. No data ever leaves your device. Note: Please give the extension 2 minutes on first use after opening youtube to allow it to download the ml models. Then hard refresh the page and the exension should start.",
   "author": "Neoblocker",
+  "license": "MIT",
   "scripts": {
     "dev": "npm run copy-wasm:dev && plasmo dev",
     "build": "npm run build:chrome",

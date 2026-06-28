@@ -5,6 +5,7 @@ from google import genai
 from crawl4ai import AsyncWebCrawler
 import json
 from urllib.parse import urlparse
+import asyncio
 import socket
 import ipaddress
 import logging
@@ -44,14 +45,19 @@ async def verify_content(request: VerifyRequest):
 
         try:
             # Resolve the hostname to an IP address
-            ip_str = socket.gethostbyname(parsed_url.hostname)
-            ip_obj = ipaddress.ip_address(ip_str)
+            loop = asyncio.get_running_loop()
+            addr_info = await loop.getaddrinfo(parsed_url.hostname, None)
 
-            # Block private, loopback, and link-local (e.g., AWS metadata 169.254.169.254) networks
-            # Note: DNS rebinding attacks (TOCTOU) are still theoretically possible unless DNS resolution
-            # is pinned inside the AsyncWebCrawler, but this blocks the most common SSRF attempts.
-            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
-                raise HTTPException(status_code=400, detail="Internal or forbidden hostnames are not allowed.")
+            for item in addr_info:
+                ip_str = item[4][0]
+                ip_obj = ipaddress.ip_address(ip_str)
+
+                # Block private, loopback, link-local, multicast, and unspecified networks
+                # Note: DNS rebinding attacks (TOCTOU) are still theoretically possible unless DNS resolution
+                # is pinned inside the AsyncWebCrawler, but this blocks the most common SSRF attempts.
+                if (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or
+                    ip_obj.is_multicast or ip_obj.is_unspecified):
+                    raise HTTPException(status_code=400, detail="Internal or forbidden hostnames are not allowed.")
         except socket.gaierror:
             raise HTTPException(status_code=400, detail="Could not resolve hostname.")
         except ValueError:

@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
 
+permissions:
+  pull-requests: write
+  contents: write
+
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
@@ -12,12 +16,6 @@ jobs:
     if: startsWith(github.head_ref, 'jules/') || startsWith(github.head_ref, 'jules-')
     
     steps:
-      - name: Auto-approve PR
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr review "$PR_URL" --approve
-
       - name: Enable Auto-Merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,3 +1,3 @@
-## 2024-05-15 - Module-Level Caching for Analysis Options
-**Learning:** Parsing comma-separated user configuration lists (like exceptions) and defining static arrays (like explicit hate keywords) locally inside a highly recurrent function (e.g., `analyzeContent`) leads to redundant string splitting and memory thrashing when the function is called on large numbers of DOM elements.
-**Action:** Always pre-parse such settings exactly once, either when updated or via global/module-scoped variables. Store simple static string arrays at module-level to avoid redefining and garbage collecting on every loop.
+## 2024-06-25 - Avoiding Unnecessary Memory Allocations in DOM Observation
+**Learning:** In high-frequency execution paths like `MutationObserver` callbacks, creating intermediate objects (like `Set` or using `Array.from()` to cast a `NodeList`) adds significant garbage collection pressure without providing value. The elements returned by `querySelectorAll` are already unique, making a `Set` entirely redundant.
+**Action:** Iterate directly over `NodeList` using a traditional `for` loop or `forEach` when querying the DOM in tight loops, and avoid creating extraneous arrays or sets.

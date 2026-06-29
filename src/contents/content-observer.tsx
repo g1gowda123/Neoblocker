@@ -153,8 +153,11 @@ const UNPROCESSED_CONTENT_SELECTORS = CONTENT_SELECTORS.split(",")
 /** Extract the 11-char video ID from any card element or the current URL (for Shorts player). */
 function getVideoId(el: HTMLElement): string {
   // Try anchor tags first (works for shelf cards and grid tiles)
-  for (const a of Array.from(el.querySelectorAll("a"))) {
-    const href = a.getAttribute("href") || ""
+  // Bolt Optimization: Iterate NodeList directly instead of Array.from()
+  // to avoid garbage collection pressure during high-frequency DOM queries
+  const anchors = el.querySelectorAll("a")
+  for (let i = 0; i < anchors.length; i++) {
+    const href = anchors[i].getAttribute("href") || ""
     const m = href.match(/(?:v=|\/shorts\/)([a-zA-Z0-9_-]{11})/)
     if (m) return m[1]
   }
@@ -712,13 +715,9 @@ const OverlayManager = () => {
         }
 
         // Regular page: collect changed card/comment nodes and process them
-        const targets = new Set<HTMLElement>()
         document
           .querySelectorAll<HTMLElement>(UNPROCESSED_CONTENT_SELECTORS)
-          .forEach((el) => {
-            targets.add(el)
-          })
-        targets.forEach(processElement)
+          .forEach(processElement)
       }, 100) // Debounce DOM queries to prevent main thread blocking
     })
 

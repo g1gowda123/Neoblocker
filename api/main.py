@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from google import genai
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, BrowserConfig
 import json
 from urllib.parse import urlparse
 import asyncio
@@ -48,23 +48,34 @@ async def verify_content(request: VerifyRequest):
             loop = asyncio.get_running_loop()
             addr_info = await loop.getaddrinfo(parsed_url.hostname, None)
 
+            # Store the first valid IP to prevent DNS rebinding attacks
+            safe_ip = None
+
             for item in addr_info:
                 ip_str = item[4][0]
                 ip_obj = ipaddress.ip_address(ip_str)
 
                 # Block private, loopback, link-local, multicast, and unspecified networks
-                # Note: DNS rebinding attacks (TOCTOU) are still theoretically possible unless DNS resolution
-                # is pinned inside the AsyncWebCrawler, but this blocks the most common SSRF attempts.
                 if (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or
                     ip_obj.is_multicast or ip_obj.is_unspecified):
                     raise HTTPException(status_code=400, detail="Internal or forbidden hostnames are not allowed.")
+
+                if not safe_ip:
+                    safe_ip = ip_str
+
         except socket.gaierror:
             raise HTTPException(status_code=400, detail="Could not resolve hostname.")
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid IP address format.")
 
         try:
-            async with AsyncWebCrawler() as crawler:
+            # Pin DNS resolution for this hostname to the validated safe_ip to prevent
+            # DNS rebinding attacks (TOCTOU) without breaking SNI on HTTPS connections.
+            # Using chromium's host resolver rules via BrowserConfig.
+            browser_config = BrowserConfig(
+                extra_args=[f"--host-resolver-rules=MAP {parsed_url.hostname} {safe_ip}"]
+            )
+            async with AsyncWebCrawler(config=browser_config) as crawler:
                 result = await crawler.arun(url=request.source_url)
                 # The result contains markdown string of the scraped page
                 context_markdown = result.markdown

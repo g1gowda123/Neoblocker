@@ -88,6 +88,7 @@ class ToxicityClassifier {
   static async getInstance() {
     if (this.instance) return this.instance
 
+    // Prevent race conditions during concurrent accesses by caching the promise
     if (!this.initializationPromise) {
       console.log("[Neoblocker] Loading Toxicity model on CPU (WASM)...")
       modelStatuses.toxicity = "loading"
@@ -122,6 +123,7 @@ class ToxicityClassifier {
 
   static unload() {
     this.instance = null
+    this.initializationPromise = null
     modelStatuses.toxicity = "idle"
     broadcastStatus()
   }
@@ -170,6 +172,7 @@ class BiasClassifier {
   static async getInstance() {
     if (this.instance) return this.instance
 
+    // Prevent race conditions during concurrent accesses by caching the promise
     if (!this.initializationPromise) {
       console.log("[Neoblocker] Loading Bias model on CPU (WASM)...")
       modelStatuses.bias = "loading"
@@ -200,6 +203,7 @@ class BiasClassifier {
 
   static unload() {
     this.instance = null
+    this.initializationPromise = null
     modelStatuses.bias = "idle"
     broadcastStatus()
   }

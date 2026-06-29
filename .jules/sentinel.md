@@ -6,3 +6,8 @@
 **Vulnerability:** User-controlled input (`source_url`) and external data (`response.text`) were being printed directly to stdout using `print()` without sanitization. This allowed attackers to inject fake log entries by including newline (`\n`) or carriage return (`\r`) characters in the input.
 **Learning:** Standard print statements and standard Python `logging` do not automatically escape newlines in log messages. When user input containing newlines is logged, it can create forged log entries that confuse administrators or mask malicious activity (CWE-117).
 **Prevention:** Always use a properly configured logging framework instead of raw `print` statements, and explicitly sanitize any user-controlled or external strings by replacing `\n` and `\r` with their escaped representations (`\\n` and `\\r`) before logging them.
+
+## 2024-05-27 - [Async SSRF Protection]
+**Vulnerability:** Blocking synchronous DNS lookup (`socket.gethostbyname`) inside an asynchronous FastAPI endpoint, potentially causing the event loop to block. Insufficient IP checks for SSRF protection.
+**Learning:** In asynchronous Python apps, using synchronous functions like `socket.gethostbyname()` can block the event loop and degrade performance. `asyncio.get_running_loop().getaddrinfo()` must be used instead. Additionally, when mitigating SSRF, all possible resolved IPs from `getaddrinfo` must be checked, and filters should include `is_multicast` and `is_unspecified` (0.0.0.0 or ::) alongside private/loopback/link-local ranges.
+**Prevention:** Always use non-blocking functions for DNS resolution in async code. Iterate through all resolved IPs and use `ipaddress` to strictly block private, loopback, link-local, multicast, and unspecified addresses.

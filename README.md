@@ -1,21 +1,21 @@
 # Neoblocker
 
-I built Neoblocker to function as an intelligent, offline content firewall directly inside the browser. Traditional static blocklists often miss context, so I designed this extension to run machine learning models locally. It analyzes page text in real-time and dynamically filters out unwanted content before it renders on your screen.
+I built Neoblocker to solve a specific problem: static blocklists lack the context needed to catch nuanced content. This project is an intelligent, strictly offline content firewall that runs directly in the browser. It leverages local machine learning models to analyze page text in real-time, dynamically filtering unwanted content before the browser renders it to the screen.
 
 ## Key Features
 
-- **Local Inference:** All text analysis happens entirely within the browser. I implemented this to ensure zero external API calls are made, meaning your browsing data never leaves your machine.
-- **Shadow DOM Isolation:** The extension UI renders securely inside a Shadow DOM using React's `createPortal`. We handle UI injection this way to prevent our CSS from leaking out or getting overwritten by the host page's stylesheets.
-- **Dynamic CSS Scoping:** To guarantee predictable styling across completely different websites, the extension transforms Tailwind CSS on the fly. It does this by replacing `:root` selectors with `:host(plasmo-csui)` and automatically converting `rem` units to `px` against a strict 16px baseline.
+- **Local Inference:** All text analysis executes on the client. I designed it this way to guarantee zero external API calls are made, ensuring user browsing data never leaves the machine.
+- **Shadow DOM Isolation:** Injecting UI into arbitrary websites often leads to CSS conflicts. We handle this by rendering the extension UI securely inside a Shadow DOM using React's `createPortal`.
+- **Dynamic CSS Scoping:** Host websites are completely unpredictable. To maintain consistent styling across the web, the extension transforms Tailwind CSS on the fly. It replaces `:root` selectors with `:host(plasmo-csui)` and converts `rem` units to `px` based on a strict 16px baseline.
 
 ## Tech Stack & Rationale
 
-I selected this stack to keep extension development predictable while maintaining a flexible, robust injected UI:
+I chose this stack to keep extension development fast and predictable while maintaining a robust injected UI.
 
-- **Plasmo:** I use Plasmo as the foundational build system. It handles the underlying architecture, abstracting away the heavy boilerplate required for Manifest V3 generation and enabling reliable hot-reloading.
-- **React:** React manages the state and rendering logic. It is critical here for handling the complex lifecycle of injected UI components isolated within the Shadow DOM.
-- **TailwindCSS:** I chose Tailwind to accelerate styling. By layering custom processing logic on top, we prevent CSS conflicts between the extension and the unpredictable styles of host websites.
-- **@xenova/transformers:** This package serves as the core logic engine. It allows the extension to run machine learning models locally via WebAssembly, powering the real-time content filtering without needing a backend server.
+- **Plasmo:** Building for Manifest V3 requires significant boilerplate. Plasmo acts as our foundational build system, abstracting away the configuration overhead and providing reliable hot-reloading.
+- **React:** Managing the complex lifecycle of UI components isolated within a Shadow DOM can be difficult. React handles the state and rendering logic cleanly.
+- **TailwindCSS:** I use Tailwind to accelerate styling. By layering custom processing logic on top, we get the speed of utility classes while actively preventing CSS collisions with the host page.
+- **@xenova/transformers:** This package serves as the core logic engine. It enables the extension to run machine learning models locally via WebAssembly, powering the real-time filtering without relying on a backend server.
 
 ## Setup & Usage
 
@@ -41,4 +41,5 @@ To create an optimized production build, run:
 ```bash
 npm run build
 ```
+
 This generates the final bundle ready to zip and publish.

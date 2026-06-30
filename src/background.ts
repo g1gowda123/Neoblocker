@@ -4,7 +4,7 @@ import { getSettings } from "~utils/storage"
 // In-memory cache for analyzed videos to prevent duplicate network calls
 const videoAnalysisCache = new Map<
   string,
-  { action: "LOCAL_BLOCK" | "SAFE"; reason?: string }
+  Promise<{ action: "LOCAL_BLOCK" | "SAFE"; reason?: string; error?: string }>
 >()
 
 function decodeHtmlEntities(str: string): string {
@@ -221,53 +221,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     // Check cache first to avoid repeating network requests
-    if (videoAnalysisCache.has(videoId)) {
-      const cachedResult = videoAnalysisCache.get(videoId)
+    if (!videoAnalysisCache.has(videoId)) {
       console.log(
-        `[Neoblocker] Cache hit for video ID ${videoId}:`,
-        cachedResult
+        `[Neoblocker] Cache miss. Prefetching & analyzing video ID: ${videoId}`
       )
-      sendResponse(cachedResult)
-      return false
+
+      const analysisPromise = fetchVideoData(videoId)
+        .then(async ({ title, deepText }) => {
+          if (!title && !deepText) return { action: "SAFE" as const }
+          const settings = await getSettings()
+
+          // Pass One: The Title Scan
+          if (title) {
+            const titleResult = await analyzeContent(title, settings, true)
+            if (titleResult.action === "LOCAL_BLOCK") {
+              return titleResult
+            }
+          }
+
+          // Pass Two: The Deep Scan
+          if (deepText) {
+            return analyzeContent(deepText, settings, false)
+          }
+
+          return { action: "SAFE" as const }
+        })
+        .catch((err) => {
+          console.error(`[Neoblocker] Analysis failed for video ${videoId}:`, err)
+          // Allow retries if failed
+          videoAnalysisCache.delete(videoId)
+          return {
+            action: "SAFE" as const,
+            error: "Internal analysis error occurred"
+          }
+        })
+
+      videoAnalysisCache.set(videoId, analysisPromise)
+    } else {
+      console.log(`[Neoblocker] Cache hit for video ID ${videoId}.`)
     }
 
-    console.log(
-      `[Neoblocker] Cache miss. Prefetching & analyzing video ID: ${videoId}`
-    )
-
-    fetchVideoData(videoId)
-      .then(async ({ title, deepText }) => {
-        if (!title && !deepText) return { action: "SAFE" as const }
-        const settings = await getSettings()
-
-        // Pass One: The Title Scan
-        if (title) {
-          const titleResult = await analyzeContent(title, settings, true)
-          if (titleResult.action === "LOCAL_BLOCK") {
-            return titleResult
-          }
-        }
-
-        // Pass Two: The Deep Scan
-        if (deepText) {
-          return analyzeContent(deepText, settings, false)
-        }
-
-        return { action: "SAFE" as const }
-      })
-      .then((result) => {
-        // Cache result
-        videoAnalysisCache.set(videoId, result)
-        sendResponse(result)
-      })
-      .catch((err) => {
-        console.error(`[Neoblocker] Analysis failed for video ${videoId}:`, err)
-        // Security Enhancement: Fail securely, don't expose stack traces/internals to content script
-        sendResponse({
-          action: "SAFE",
-          error: "Internal analysis error occurred"
-        })
-      })
+    videoAnalysisCache.get(videoId)?.then((result) => {
+      sendResponse(result)
+    }).catch((err) => {
+      // In theory, the catch block in the promise creation handles this,
+      // but catching here avoids unhandled rejection warnings just in case.
+      console.error(`[Neoblocker] Cached promise failed for ${videoId}:`, err)
+      sendResponse({ action: "SAFE", error: "Internal analysis error occurred" })
+    })
 
     return true // Indicate async response
   }

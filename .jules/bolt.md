@@ -9,3 +9,7 @@
 ## 2024-06-30 - Redundant Allocations in High-Frequency DOM Operations
 **Learning:** Operations within a fast-firing debounced MutationObserver are extremely sensitive to garbage collection (GC) overhead. Constructing temporary `Array` instances via `Array.from()` to iterate `NodeLists`, or passing `document.querySelectorAll()` results into a `Set` for deduplication (which is unnecessary as `querySelectorAll` guarantees unique elements), creates immense GC thrashing on pages like YouTube.
 **Action:** Avoid intermediate object/array allocations in hot paths entirely. Iterate over `NodeList` instances directly using standard `for` loops or `.forEach()`.
+
+## 2026-07-01 - Portal Overlay Memoization
+**Learning:** When using `createPortal` inside a mapped array in React, passing inline arrow functions as callbacks (e.g., `onReveal={() => handleReveal(id)}`) forces every single portal to re-render whenever the parent state changes (like when an item is removed), which causes significant lag when blocking many elements.
+**Action:** Always wrap portal components in `React.memo` and use stable references with `useCallback` in the parent to pass down event handlers, keeping the child props purely data-driven.

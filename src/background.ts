@@ -247,7 +247,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return { action: "SAFE" as const }
         })
         .catch((err) => {
-          console.error(`[Neoblocker] Analysis failed for video ${videoId}:`, err)
+          console.error(
+            `[Neoblocker] Analysis failed for video ${videoId}:`,
+            err
+          )
           // Allow retries if failed
           videoAnalysisCache.delete(videoId)
           return {
@@ -261,14 +264,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.log(`[Neoblocker] Cache hit for video ID ${videoId}.`)
     }
 
-    videoAnalysisCache.get(videoId)?.then((result) => {
-      sendResponse(result)
-    }).catch((err) => {
-      // In theory, the catch block in the promise creation handles this,
-      // but catching here avoids unhandled rejection warnings just in case.
-      console.error(`[Neoblocker] Cached promise failed for ${videoId}:`, err)
-      sendResponse({ action: "SAFE", error: "Internal analysis error occurred" })
-    })
+    videoAnalysisCache
+      .get(videoId)
+      ?.then((result) => {
+        sendResponse(result)
+      })
+      .catch((err) => {
+        // In theory, the catch block in the promise creation handles this,
+        // but catching here avoids unhandled rejection warnings just in case.
+        console.error(`[Neoblocker] Cached promise failed for ${videoId}:`, err)
+        sendResponse({
+          action: "SAFE",
+          error: "Internal analysis error occurred"
+        })
+      })
 
     return true // Indicate async response
   }

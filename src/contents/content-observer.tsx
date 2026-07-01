@@ -1,6 +1,6 @@
 import cssText from "data-text:~style.css"
 import type { PlasmoCSConfig } from "plasmo"
-import { useEffect, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
 export const config: PlasmoCSConfig = {
@@ -40,89 +40,96 @@ interface BlockedItem {
 }
 
 // ─── Firewall Overlay Card ─────────────────────────────────────────────────────
-const FirewallOverlay = ({
-  item,
-  onReveal
-}: {
-  item: BlockedItem
-  onReveal: () => void
-}) => {
-  const ytDark = document.documentElement.hasAttribute("dark")
-  const bg = ytDark ? "#0f0f0f" : "#ffffff"
-  const txt = ytDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.9)"
-  const sub = ytDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)"
-  const btn = ytDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"
-  const btnHover = ytDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.11)"
+const FirewallOverlay = memo(
+  ({
+    item,
+    onReveal
+  }: {
+    item: BlockedItem
+    onReveal: (item: BlockedItem) => void
+  }) => {
+    const ytDark = document.documentElement.hasAttribute("dark")
+    const bg = ytDark ? "#0f0f0f" : "#ffffff"
+    const txt = ytDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.9)"
+    const sub = ytDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)"
+    const btn = ytDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"
+    const btnHover = ytDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.11)"
 
-  return (
-    <div
-      className="plasmo-absolute plasmo-inset-0 plasmo-z-[99999] plasmo-flex plasmo-flex-col plasmo-items-center plasmo-justify-center plasmo-p-4 plasmo-text-center plasmo-box-border"
-      style={{
-        backgroundColor: bg,
-        borderRadius: "inherit",
-        fontFamily: "Roboto, Arial, sans-serif",
-        opacity: 0.97
-      }}
-      onClick={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation()
-      }}>
-      <svg
+    return (
+      <div
+        className="plasmo-absolute plasmo-inset-0 plasmo-z-[99999] plasmo-flex plasmo-flex-col plasmo-items-center plasmo-justify-center plasmo-p-4 plasmo-text-center plasmo-box-border"
         style={{
-          width: 15,
-          height: 15,
-          marginBottom: 6,
-          opacity: 0.35,
-          color: sub
+          backgroundColor: bg,
+          borderRadius: "inherit",
+          fontFamily: "Roboto, Arial, sans-serif",
+          opacity: 0.97
         }}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.5"
-          d="M12 3l7 4v5c0 4.418-3.134 8.215-7 9-3.866-.785-7-4.582-7-9V7l7-4z"
-        />
-      </svg>
-      <span
-        style={{ fontSize: 11, fontWeight: 500, color: txt, marginBottom: 2 }}>
-        Filtered by Neoblocker
-      </span>
-      <span style={{ fontSize: 10, color: sub, marginBottom: 12 }}>
-        {item.reason}
-      </span>
-      <button
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
           if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation()
-          onReveal()
-        }}
-        style={{
-          backgroundColor: btn,
-          color: txt,
-          border: "none",
-          borderRadius: 18,
-          padding: "5px 14px",
-          fontSize: 11,
-          fontWeight: 500,
-          cursor: "pointer",
-          fontFamily: "Roboto, Arial, sans-serif",
-          transition: "background-color 0.15s"
-        }}
-        onMouseOver={(e) => {
-          ;(e.currentTarget as HTMLElement).style.backgroundColor = btnHover
-        }}
-        onMouseOut={(e) => {
-          ;(e.currentTarget as HTMLElement).style.backgroundColor = btn
         }}>
-        Show anyway
-      </button>
-    </div>
-  )
-}
+        <svg
+          style={{
+            width: 15,
+            height: 15,
+            marginBottom: 6,
+            opacity: 0.35,
+            color: sub
+          }}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.5"
+            d="M12 3l7 4v5c0 4.418-3.134 8.215-7 9-3.866-.785-7-4.582-7-9V7l7-4z"
+          />
+        </svg>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: txt,
+            marginBottom: 2
+          }}>
+          Filtered by Neoblocker
+        </span>
+        <span style={{ fontSize: 10, color: sub, marginBottom: 12 }}>
+          {item.reason}
+        </span>
+        <button
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation()
+            onReveal(item)
+          }}
+          style={{
+            backgroundColor: btn,
+            color: txt,
+            border: "none",
+            borderRadius: 18,
+            padding: "5px 14px",
+            fontSize: 11,
+            fontWeight: 500,
+            cursor: "pointer",
+            fontFamily: "Roboto, Arial, sans-serif",
+            transition: "background-color 0.15s"
+          }}
+          onMouseOver={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = btnHover
+          }}
+          onMouseOut={(e) => {
+            ;(e.currentTarget as HTMLElement).style.backgroundColor = btn
+          }}>
+          Show anyway
+        </button>
+      </div>
+    )
+  }
+)
 
 // ─── DOM selectors for video cards + comment elements ─────────────────────────
 const CARD_SELECTORS = [
@@ -315,7 +322,7 @@ const OverlayManager = () => {
   }
 
   // ─── Reveal handlers ────────────────────────────────────────────────────────
-  const handleReveal = (videoId: string) => {
+  const handleReveal = useCallback((videoId: string) => {
     revealedVideoIds.current.add(videoId)
     setBlockedItems((prev) => prev.filter((item) => item.videoId !== videoId))
     document
@@ -350,9 +357,9 @@ const OverlayManager = () => {
         .querySelectorAll(".plasmo-firewall-mount")
         .forEach((m) => m.remove())
     }
-  }
+  }, [])
 
-  const handleRevealComment = (commentId: string) => {
+  const handleRevealComment = useCallback((commentId: string) => {
     setBlockedItems((prev) =>
       prev.filter((item) => item.commentId !== commentId)
     )
@@ -367,7 +374,15 @@ const OverlayManager = () => {
       el.style.position = ""
       el.querySelectorAll(".plasmo-firewall-mount").forEach((m) => m.remove())
     }
-  }
+  }, [])
+
+  const handleRevealItem = useCallback(
+    (item: BlockedItem) => {
+      if (item.commentId) handleRevealComment(item.commentId)
+      else if (item.videoId) handleReveal(item.videoId)
+    },
+    [handleReveal, handleRevealComment]
+  )
 
   // ─── Main analysis logic ────────────────────────────────────────────────────
   useEffect(() => {
@@ -817,10 +832,7 @@ const OverlayManager = () => {
           <FirewallOverlay
             key={item.id}
             item={item}
-            onReveal={() => {
-              if (item.commentId) handleRevealComment(item.commentId)
-              else if (item.videoId) handleReveal(item.videoId)
-            }}
+            onReveal={handleRevealItem}
           />,
           item.element
         )

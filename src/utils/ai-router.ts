@@ -86,7 +86,7 @@ class ToxicityClassifier {
   private static initializationPromise: Promise<any> | null = null
 
   static async getInstance() {
-    if (this.instance) return this.instance
+    if (this.initializationPromise) return this.initializationPromise
 
     // Prevent race conditions during concurrent accesses by caching the promise
     if (!this.initializationPromise) {
@@ -170,7 +170,7 @@ class BiasClassifier {
   private static initializationPromise: Promise<any> | null = null
 
   static async getInstance() {
-    if (this.instance) return this.instance
+    if (this.initializationPromise) return this.initializationPromise
 
     // Prevent race conditions during concurrent accesses by caching the promise
     if (!this.initializationPromise) {

@@ -82,7 +82,9 @@ export class NanoClassifier {
 
 class ToxicityClassifier {
   static instance: ReturnType<typeof pipeline> | null = null
-  private static cache = new Map<string, Record<string, number>>()
+  // Bolt Optimization: Cache the Promise rather than the resolved object to prevent race conditions
+  // where multiple concurrent requests for the same text trigger redundant, parallel pipeline executions.
+  private static cache = new Map<string, Promise<Record<string, number>>>()
   private static initializationPromise: Promise<any> | null = null
 
   static async getInstance() {
@@ -133,25 +135,33 @@ class ToxicityClassifier {
       return this.cache.get(text)!
     }
 
-    const classifier = await this.getInstance()
-    // Pass topk as a runtime inference option (not top_k) to get all label scores
-    const results = (await (classifier as any)(text.slice(0, 512), {
-      topk: 16
-    })) as Array<{ label: string; score: number }>
+    const analysisPromise = (async () => {
+      try {
+        const classifier = await this.getInstance()
+        // Pass topk as a runtime inference option (not top_k) to get all label scores
+        const results = (await (classifier as any)(text.slice(0, 512), {
+          topk: 16
+        })) as Array<{ label: string; score: number }>
 
-    const scores: Record<string, number> = {}
-    for (const r of results) {
-      scores[r.label] = r.score
-    }
+        const scores: Record<string, number> = {}
+        for (const r of results) {
+          scores[r.label] = r.score
+        }
+        return scores
+      } catch (error) {
+        ToxicityClassifier.cache.delete(text)
+        throw error
+      }
+    })()
 
     // Limit cache size to prevent memory leaks in long sessions
     if (this.cache.size > 1000) {
       const firstKey = this.cache.keys().next().value
       if (firstKey) this.cache.delete(firstKey)
     }
-    this.cache.set(text, scores)
+    this.cache.set(text, analysisPromise)
 
-    return scores
+    return analysisPromise
   }
 }
 
@@ -166,7 +176,9 @@ const BIAS_THRESHOLD = 0.5
 
 class BiasClassifier {
   static instance: ReturnType<typeof pipeline> | null = null
-  private static cache = new Map<string, number>()
+  // Bolt Optimization: Cache the Promise rather than the resolved object to prevent race conditions
+  // where multiple concurrent requests for the same text trigger redundant, parallel pipeline executions.
+  private static cache = new Map<string, Promise<number>>()
   private static initializationPromise: Promise<any> | null = null
 
   static async getInstance() {
@@ -213,21 +225,30 @@ class BiasClassifier {
       return this.cache.get(text)!
     }
 
-    const classifier = await this.getInstance()
-    const results = (await (classifier as any)(text.slice(0, 512))) as Array<{
-      label: string
-      score: number
-    }>
-    const result = results[0]
-    const biasScore = result && result.label === "BIASED" ? result.score : 0
+    const analysisPromise = (async () => {
+      try {
+        const classifier = await this.getInstance()
+        const results = (await (classifier as any)(
+          text.slice(0, 512)
+        )) as Array<{
+          label: string
+          score: number
+        }>
+        const result = results[0]
+        return result && result.label === "BIASED" ? result.score : 0
+      } catch (error) {
+        BiasClassifier.cache.delete(text)
+        throw error
+      }
+    })()
 
     if (this.cache.size > 1000) {
       const firstKey = this.cache.keys().next().value
       if (firstKey) this.cache.delete(firstKey)
     }
-    this.cache.set(text, biasScore)
+    this.cache.set(text, analysisPromise)
 
-    return biasScore
+    return analysisPromise
   }
 }
 

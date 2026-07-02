@@ -13,3 +13,7 @@
 ## 2026-07-01 - Portal Overlay Memoization
 **Learning:** When using `createPortal` inside a mapped array in React, passing inline arrow functions as callbacks (e.g., `onReveal={() => handleReveal(id)}`) forces every single portal to re-render whenever the parent state changes (like when an item is removed), which causes significant lag when blocking many elements.
 **Action:** Always wrap portal components in `React.memo` and use stable references with `useCallback` in the parent to pass down event handlers, keeping the child props purely data-driven.
+## 2024-07-02 - Cache stampede prevention in local ML router
+
+**Learning:** When dealing with asynchronous CPU-heavy operations like local ML inferences (via transformers.js), caching the resolved output is often not enough to prevent redundant work. Concurrent rapid requests for identical inputs will all bypass a stale cache, triggering parallel executions and blocking the main thread.
+**Action:** Next time you implement a cache for an expensive async operation, cache the `Promise` itself immediately, rather than waiting for the final resolution. Ensure the promise is evicted from the cache upon rejection to allow for retries.

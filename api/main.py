@@ -9,6 +9,7 @@ import asyncio
 import socket
 import ipaddress
 import logging
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -42,6 +43,10 @@ async def verify_content(request: VerifyRequest):
 
         if not parsed_url.hostname:
             raise HTTPException(status_code=400, detail="Invalid URL: Missing hostname.")
+
+        # Mitigate Argument Injection for Chromium crawler
+        if not re.match(r"^([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])$", parsed_url.hostname):
+            raise HTTPException(status_code=400, detail="Invalid URL: Hostname contains invalid characters.")
 
         try:
             # Resolve the hostname to an IP address

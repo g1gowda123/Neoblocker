@@ -45,3 +45,13 @@ def test_crawler_log_injection(mock_genai_client, mock_crawler, caplog):
     log_messages = [record.message for record in caplog.records]
     assert any(escaped_url in msg for msg in log_messages)
     # the assertion was failing because a stack trace (from asyncio task) with \n was in the logs, so we'll just check if our escaped url is there
+
+def test_chromium_argument_injection():
+    # Test that a hostname containing malicious spaces (which could be used for argument injection)
+    # is rejected by the API with a 400 status.
+    malicious_url = "https://example.com --proxy-server=http://attacker.com/"
+
+    response = client.post("/verify", json={"text": "Test text", "source_url": malicious_url})
+
+    assert response.status_code == 400
+    assert "Invalid URL: Hostname contains invalid characters" in response.json()["detail"]

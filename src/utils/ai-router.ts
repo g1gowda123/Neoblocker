@@ -61,7 +61,7 @@ const TOXICITY_REASON_MAP: Record<string, string> = {
 export class NanoClassifier {
   static sessionPromise: Promise<any> | null = null
 
-  static async getSession() {
+  static getSession() {
     if (!this.sessionPromise) {
       this.sessionPromise = (window as any).ai.createTextSession()
     }
@@ -87,7 +87,7 @@ class ToxicityClassifier {
   private static cache = new Map<string, Promise<Record<string, number>>>()
   private static initializationPromise: Promise<any> | null = null
 
-  static async getInstance() {
+  static getInstance() {
     if (this.initializationPromise) return this.initializationPromise
 
     // Prevent race conditions during concurrent accesses by caching the promise
@@ -181,7 +181,7 @@ class BiasClassifier {
   private static cache = new Map<string, Promise<number>>()
   private static initializationPromise: Promise<any> | null = null
 
-  static async getInstance() {
+  static getInstance() {
     if (this.initializationPromise) return this.initializationPromise
 
     // Prevent race conditions during concurrent accesses by caching the promise

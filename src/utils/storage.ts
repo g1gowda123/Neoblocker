@@ -29,17 +29,44 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   bannedKeywords: ""
 }
 
-export async function getSettings(): Promise<ExtensionSettings> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY, (result) => {
-      const saved = result[STORAGE_KEY]
-      if (saved) {
-        resolve({ ...DEFAULT_SETTINGS, ...saved })
+// Bolt Optimization: Cache the settings promise to prevent duplicate concurrent
+// storage reads, and keep it updated via onChanged listener.
+let cachedSettingsPromise: Promise<ExtensionSettings> | null = null
+
+if (
+  typeof chrome !== "undefined" &&
+  chrome.storage &&
+  chrome.storage.onChanged
+) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[STORAGE_KEY]) {
+      const newValue = changes[STORAGE_KEY].newValue
+      if (newValue) {
+        cachedSettingsPromise = Promise.resolve({
+          ...DEFAULT_SETTINGS,
+          ...newValue
+        })
       } else {
-        resolve(DEFAULT_SETTINGS)
+        cachedSettingsPromise = Promise.resolve(DEFAULT_SETTINGS)
       }
-    })
+    }
   })
+}
+
+export async function getSettings(): Promise<ExtensionSettings> {
+  if (!cachedSettingsPromise) {
+    cachedSettingsPromise = new Promise((resolve) => {
+      chrome.storage.local.get(STORAGE_KEY, (result) => {
+        const saved = result[STORAGE_KEY]
+        if (saved) {
+          resolve({ ...DEFAULT_SETTINGS, ...saved })
+        } else {
+          resolve(DEFAULT_SETTINGS)
+        }
+      })
+    })
+  }
+  return cachedSettingsPromise
 }
 
 export async function saveSettings(
@@ -47,6 +74,8 @@ export async function saveSettings(
 ): Promise<void> {
   const current = await getSettings()
   const next = { ...current, ...settings }
+  // Update local cache optimistically
+  cachedSettingsPromise = Promise.resolve(next)
   return new Promise((resolve) => {
     chrome.storage.local.set({ [STORAGE_KEY]: next }, resolve)
   })

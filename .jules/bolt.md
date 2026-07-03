@@ -17,3 +17,6 @@
 
 **Learning:** When dealing with asynchronous CPU-heavy operations like local ML inferences (via transformers.js), caching the resolved output is often not enough to prevent redundant work. Concurrent rapid requests for identical inputs will all bypass a stale cache, triggering parallel executions and blocking the main thread.
 **Action:** Next time you implement a cache for an expensive async operation, cache the `Promise` itself immediately, rather than waiting for the final resolution. Ensure the promise is evicted from the cache upon rejection to allow for retries.
+## 2024-07-03 - Extension Storage Caching
+**Learning:** Repeated asynchronous IPC calls to `chrome.storage.local.get` in high-frequency functions (like message listeners in background scripts) can cause severe storage I/O bottlenecks and lag.
+**Action:** Cache the settings promise in-memory and maintain cache coherence using `chrome.storage.onChanged.addListener` to eliminate redundant storage reads.

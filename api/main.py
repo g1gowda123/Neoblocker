@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from google import genai
 from crawl4ai import AsyncWebCrawler, BrowserConfig
@@ -25,7 +25,7 @@ def sanitize_log(text: str) -> str:
 app = FastAPI()
 
 class VerifyRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=5000)
     source_url: Optional[str] = None
 
 class VerifyResponse(BaseModel):

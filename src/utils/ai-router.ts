@@ -130,7 +130,7 @@ class ToxicityClassifier {
     broadcastStatus()
   }
 
-  static async analyze(text: string): Promise<Record<string, number>> {
+  static analyze(text: string): Promise<Record<string, number>> {
     if (this.cache.has(text)) {
       return this.cache.get(text)!
     }
@@ -220,7 +220,7 @@ class BiasClassifier {
     broadcastStatus()
   }
 
-  static async analyze(text: string): Promise<number> {
+  static analyze(text: string): Promise<number> {
     if (this.cache.has(text)) {
       return this.cache.get(text)!
     }

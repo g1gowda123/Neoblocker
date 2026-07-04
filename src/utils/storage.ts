@@ -53,7 +53,7 @@ if (
   })
 }
 
-export async function getSettings(): Promise<ExtensionSettings> {
+export function getSettings(): Promise<ExtensionSettings> {
   if (!cachedSettingsPromise) {
     cachedSettingsPromise = new Promise((resolve) => {
       chrome.storage.local.get(STORAGE_KEY, (result) => {

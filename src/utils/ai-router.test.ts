@@ -93,7 +93,10 @@ describe("analyzeContent safe-context check", () => {
       enableObscene: true,
       toxicityThreshold: 0.5,
       racismThreshold: 0.5,
-      biasThreshold: 0.5
+      biasThreshold: 0.5,
+      theme: "dark" as "dark",
+      filterMode: "blur" as "blur",
+      bannedKeywords: ""
     }
 
     // "tutorial" is a safe keyword.
@@ -124,7 +127,10 @@ describe("analyzeContent safe-context check", () => {
       enableObscene: true,
       toxicityThreshold: 0.5,
       racismThreshold: 0.5,
-      biasThreshold: 0.5
+      biasThreshold: 0.5,
+      theme: "dark" as "dark",
+      filterMode: "blur" as "blur",
+      bannedKeywords: ""
     }
 
     // "mismatch" contains "match" (a safe keyword), but "mismatch" itself is not safe.

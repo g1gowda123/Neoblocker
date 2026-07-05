@@ -1,8 +1,8 @@
 # Neoblocker
 
-I built Neoblocker to solve a specific problem: static blocklists simply fail at catching nuanced, dynamic content.
+Static blocklists are fundamentally broken—they simply can't keep up with nuanced, dynamic content. I built Neoblocker to solve this problem.
 
-This project is a strictly offline content firewall that runs directly inside the browser. Rather than maintaining massive, constantly outdated lists of bad domains, we run local machine learning models to analyze page text in real time. We catch and filter unwanted content locally before the browser even paints it to the screen.
+This project is a strictly offline content firewall that runs directly inside the browser. Rather than maintaining massive, constantly outdated lists of bad domains, Neoblocker runs local machine learning models to analyze page text in real time. We catch and filter unwanted content locally before the browser even has a chance to paint it to the screen.
 
 ## Key Features
 
@@ -12,12 +12,12 @@ This project is a strictly offline content firewall that runs directly inside th
 
 ## Tech Stack & Rationale
 
-I chose this specific stack to keep the extension development fast, while ensuring the injected UI stays robust and predictable regardless of the host site's CSS.
+I chose this specific stack to keep development fast while ensuring the injected UI stays robust and predictable regardless of the host site's CSS.
 
-- **Plasmo:** Building for Manifest V3 requires significant boilerplate. Plasmo acts as our foundational build system. It strips out the configuration overhead and provides reliable hot-reloading out of the box.
-- **React:** Managing the complex lifecycle of UI components isolated within a Shadow DOM can get messy fast. React cleanly handles the state and rendering logic, keeping the component tree manageable.
+- **Plasmo:** Building for Manifest V3 requires massive amounts of boilerplate. Plasmo acts as our foundational build system, stripping out the configuration overhead and providing reliable hot-reloading out of the box.
+- **React:** Managing the complex lifecycle of UI components isolated within a Shadow DOM can get messy fast. React cleanly handles our state and rendering logic, keeping the component tree manageable.
 - **TailwindCSS:** I use Tailwind to move fast on styling. By layering custom processing logic on top of it, we keep the speed of utility classes while actively preventing CSS from leaking into the host page.
-- **@xenova/transformers:** This package serves as the core engine. It allows us to run machine learning models locally via WebAssembly, powering the real-time filtering completely offline without the need for a backend server.
+- **@xenova/transformers:** This package is our core engine. It lets us run machine learning models locally via WebAssembly, powering real-time filtering completely offline without the need for a backend server.
 
 ## Setup & Usage
 
@@ -44,4 +44,4 @@ To create an optimized production build, run:
 npm run build
 ```
 
-This generates the final bundle ready to zip and publish.
+This generates the final bundle, ready to zip and publish.

@@ -45,7 +45,8 @@ async def verify_content(request: VerifyRequest):
             raise HTTPException(status_code=400, detail="Invalid URL: Missing hostname.")
 
         # Mitigate Argument Injection for Chromium crawler
-        if not re.match(r"^([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])$", parsed_url.hostname):
+        # Note: urlparse strips brackets from IPv6 hostnames, so we check the raw hex/colons
+        if not re.match(r"^([a-zA-Z0-9.-]+|[a-fA-F0-9:]+)$", parsed_url.hostname):
             raise HTTPException(status_code=400, detail="Invalid URL: Hostname contains invalid characters.")
 
         try:
@@ -61,8 +62,9 @@ async def verify_content(request: VerifyRequest):
                 ip_obj = ipaddress.ip_address(ip_str)
 
                 # Block private, loopback, link-local, multicast, and unspecified networks
+                # Also explicitly require the IP to be globally routable (blocks reserved ranges)
                 if (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or
-                    ip_obj.is_multicast or ip_obj.is_unspecified):
+                    ip_obj.is_multicast or ip_obj.is_unspecified or not ip_obj.is_global):
                     raise HTTPException(status_code=400, detail="Internal or forbidden hostnames are not allowed.")
 
                 if not safe_ip:

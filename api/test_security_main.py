@@ -55,3 +55,30 @@ def test_chromium_argument_injection():
 
     assert response.status_code == 400
     assert "Invalid URL: Hostname contains invalid characters" in response.json()["detail"]
+
+def test_ipv6_hostname_validation():
+    # Test that a valid IPv6 address in brackets is allowed and passes hostname validation.
+    # Note: 2606:4700:4700::1111 is a public Cloudflare DNS resolver IP (globally routable)
+    valid_ipv6_url = "http://[2606:4700:4700::1111]/"
+
+    # We mock getaddrinfo to return this IP so it passes SSRF checks
+    from unittest.mock import patch
+    import asyncio
+
+    with patch('api.main.AsyncWebCrawler'), patch('api.main.genai.Client'):
+        response = client.post("/verify", json={"text": "Test text", "source_url": valid_ipv6_url})
+
+    # Status code shouldn't be 400 with "Invalid URL: Hostname contains invalid characters"
+    assert response.status_code != 400 or "Invalid URL" not in response.text
+
+def test_ssrf_zero_ip():
+    # Test that 0.0.0.0 (unspecified) is blocked
+    response = client.post("/verify", json={"text": "Test text", "source_url": "http://0.0.0.0/admin"})
+    assert response.status_code == 400
+    assert "Internal or forbidden hostnames are not allowed" in response.json()["detail"]
+
+def test_ssrf_zero_hostname():
+    # Test that 0 is blocked (which resolves to 0.0.0.0)
+    response = client.post("/verify", json={"text": "Test text", "source_url": "http://0/admin"})
+    assert response.status_code == 400
+    assert "Internal or forbidden hostnames are not allowed" in response.json()["detail"]

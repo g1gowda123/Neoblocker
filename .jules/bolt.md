@@ -20,3 +20,7 @@
 ## 2024-07-03 - Extension Storage Caching
 **Learning:** Repeated asynchronous IPC calls to `chrome.storage.local.get` in high-frequency functions (like message listeners in background scripts) can cause severe storage I/O bottlenecks and lag.
 **Action:** Cache the settings promise in-memory and maintain cache coherence using `chrome.storage.onChanged.addListener` to eliminate redundant storage reads.
+
+## 2024-07-04 - IPC Message Passing Cache
+**Learning:** Sending the same text to the background script multiple times via `chrome.runtime.sendMessage` from a `MutationObserver` callback causes severe network overhead and potential race conditions ("thundering herd" problem), slowing down the main thread. Caching just the text is dangerous if the context (e.g., title vs comment) matters to the background script.
+**Action:** When caching IPC promises in content scripts, always ensure the cache key contains the necessary contextual prefix (e.g., `t:${text}` or `c:${text}`) to avoid collisions. Limit the cache size to avoid memory leaks, remove promises if they reject to allow retries, and clear the cache completely when local settings change to avoid stale evaluations.

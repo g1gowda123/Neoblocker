@@ -221,6 +221,10 @@ const OverlayManager = () => {
   const revealedVideoIds = useRef(new Set<string>())
   // Comment reason map for self-healing
   const blockedCommentReasons = useRef(new Map<string, string>())
+  // Bolt Optimization: Cache text analysis promises to avoid redundant parallel network requests
+  const textAnalysisCache = useRef(
+    new Map<string, Promise<{ action: string; reason?: string }>>()
+  )
 
   // ─── Load settings from storage and keep in sync ───────────────────────────
   useEffect(() => {
@@ -230,6 +234,7 @@ const OverlayManager = () => {
         const mode: "blur" | "remove" = settingsRef.current.filterMode || "blur"
         filterModeRef.current = mode
         setFilterMode(mode)
+        textAnalysisCache.current.clear()
       })
     }
     loadSettings()
@@ -443,11 +448,26 @@ const OverlayManager = () => {
         if (matchesException(settings, lowerText)) return
 
         try {
-          const response = await chrome.runtime.sendMessage({
-            action: "analyze",
-            text: commentText,
-            isTitle: false
-          })
+          const cacheKey = `c:${lowerText}`
+          if (!textAnalysisCache.current.has(cacheKey)) {
+            const promise = chrome.runtime
+              .sendMessage({
+                action: "analyze",
+                text: commentText,
+                isTitle: false
+              })
+              .catch((err) => {
+                textAnalysisCache.current.delete(cacheKey)
+                throw err
+              })
+            if (textAnalysisCache.current.size > 1000) {
+              const firstKey = textAnalysisCache.current.keys().next().value
+              if (firstKey) textAnalysisCache.current.delete(firstKey)
+            }
+            textAnalysisCache.current.set(cacheKey, promise)
+          }
+
+          const response = await textAnalysisCache.current.get(cacheKey)
           if (response?.action === "LOCAL_BLOCK") {
             blockElement(
               target,
@@ -504,11 +524,27 @@ const OverlayManager = () => {
       // Quick title analysis
       if (lowerTitle) {
         try {
-          const response = await chrome.runtime.sendMessage({
-            action: "analyze",
-            text: titleText,
-            isTitle: true
-          })
+          const cacheKey = `t:${lowerTitle}`
+          if (!textAnalysisCache.current.has(cacheKey)) {
+            const promise = chrome.runtime
+              .sendMessage({
+                action: "analyze",
+                text: titleText,
+                isTitle: true
+              })
+              .catch((err) => {
+                textAnalysisCache.current.delete(cacheKey)
+                throw err
+              })
+            // Limit cache size to prevent memory leaks in long sessions
+            if (textAnalysisCache.current.size > 1000) {
+              const firstKey = textAnalysisCache.current.keys().next().value
+              if (firstKey) textAnalysisCache.current.delete(firstKey)
+            }
+            textAnalysisCache.current.set(cacheKey, promise)
+          }
+
+          const response = await textAnalysisCache.current.get(cacheKey)
           if (response?.action === "LOCAL_BLOCK") {
             const reason = response.reason || "Flagged Content"
             blockedVideoIds.current.set(videoId, reason)
@@ -594,11 +630,27 @@ const OverlayManager = () => {
 
       // Quick title analysis
       try {
-        const response = await chrome.runtime.sendMessage({
-          action: "analyze",
-          text: titleText,
-          isTitle: true
-        })
+        const cacheKey = `t:${lowerTitle}`
+        if (!textAnalysisCache.current.has(cacheKey)) {
+          const promise = chrome.runtime
+            .sendMessage({
+              action: "analyze",
+              text: titleText,
+              isTitle: true
+            })
+            .catch((err) => {
+              textAnalysisCache.current.delete(cacheKey)
+              throw err
+            })
+          // Limit cache size to prevent memory leaks in long sessions
+          if (textAnalysisCache.current.size > 1000) {
+            const firstKey = textAnalysisCache.current.keys().next().value
+            if (firstKey) textAnalysisCache.current.delete(firstKey)
+          }
+          textAnalysisCache.current.set(cacheKey, promise)
+        }
+
+        const response = await textAnalysisCache.current.get(cacheKey)
         if (response?.action === "LOCAL_BLOCK") {
           const reason = response.reason || "Flagged Content"
           blockedVideoIds.current.set(videoId, reason)

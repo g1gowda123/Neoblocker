@@ -27,3 +27,16 @@ def test_verify_valid_input_limit():
 
         response = client.post("/verify", json={"text": valid_text})
         assert response.status_code == 200
+
+def test_verify_dos_url_limit():
+    large_url = "http://example.com/" + "a" * 2049
+    response = client.post("/verify", json={"text": "hello", "source_url": large_url})
+    assert response.status_code == 422
+    assert "String should have at most 2048 characters" in response.json()["detail"][0]["msg"]
+
+def test_verify_valid_url_limit():
+    valid_url = "http://example.com/" + "a" * 2000
+    response = client.post("/verify", json={"text": "hello", "source_url": valid_url})
+    # If the URL check passes (or gets 400 for bad IP format in the test env),
+    # it shouldn't get a 422 from Pydantic.
+    assert response.status_code != 422

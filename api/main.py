@@ -26,7 +26,7 @@ app = FastAPI()
 
 class VerifyRequest(BaseModel):
     text: str = Field(..., max_length=5000)
-    source_url: Optional[str] = None
+    source_url: Optional[str] = Field(default=None, max_length=2048)
 
 class VerifyResponse(BaseModel):
     is_threat: bool

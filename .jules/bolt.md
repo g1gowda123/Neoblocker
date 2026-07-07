@@ -24,3 +24,6 @@
 ## 2024-07-04 - IPC Message Passing Cache
 **Learning:** Sending the same text to the background script multiple times via `chrome.runtime.sendMessage` from a `MutationObserver` callback causes severe network overhead and potential race conditions ("thundering herd" problem), slowing down the main thread. Caching just the text is dangerous if the context (e.g., title vs comment) matters to the background script.
 **Action:** When caching IPC promises in content scripts, always ensure the cache key contains the necessary contextual prefix (e.g., `t:${text}` or `c:${text}`) to avoid collisions. Limit the cache size to avoid memory leaks, remove promises if they reject to allow retries, and clear the cache completely when local settings change to avoid stale evaluations.
+## 2024-07-05 - Avoid redundant JSON serialization
+**Learning:** Calling `JSON.stringify()` on a massively nested object (like YouTube's `ytInitialPlayerResponse`) merely to run a string search or regex against it is an extremely slow, blocking, memory-intensive operation. If the original JSON text is available (e.g. `playerResponseJson`), you should perform the Regex extraction on that instead.
+**Action:** Never serialize a previously parsed object back to a JSON string if the goal is only substring or regex extraction. Use the original raw payload string instead.

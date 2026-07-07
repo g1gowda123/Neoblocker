@@ -106,8 +106,9 @@ async function fetchVideoData(
     const apiKeyMatch = html.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/)
     if (apiKeyMatch) {
       const apiKey = apiKeyMatch[1]
-      const strJson = JSON.stringify(playerResponse)
-      const tokenMatch = strJson.match(/"token":"([^"]+)"/)
+      // Bolt Optimization: We already have the raw JSON string `playerResponseJson`.
+      // Using it directly avoids an expensive `JSON.stringify(playerResponse)` on a large object.
+      const tokenMatch = playerResponseJson.match(/"token":"([^"]+)"/)
       if (tokenMatch) {
         const token = tokenMatch[1]
         commentsPromise = fetch(

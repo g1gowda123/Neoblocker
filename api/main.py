@@ -68,7 +68,7 @@ async def verify_content(request: VerifyRequest):
                     raise HTTPException(status_code=400, detail="Internal or forbidden hostnames are not allowed.")
 
                 if not safe_ip:
-                    safe_ip = ip_str
+                    safe_ip = f"[{ip_str}]" if ip_obj.version == 6 else ip_str
 
         except socket.gaierror:
             raise HTTPException(status_code=400, detail="Could not resolve hostname.")

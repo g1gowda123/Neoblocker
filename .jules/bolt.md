@@ -27,3 +27,7 @@
 ## 2024-07-05 - Avoid redundant JSON serialization
 **Learning:** Calling `JSON.stringify()` on a massively nested object (like YouTube's `ytInitialPlayerResponse`) merely to run a string search or regex against it is an extremely slow, blocking, memory-intensive operation. If the original JSON text is available (e.g. `playerResponseJson`), you should perform the Regex extraction on that instead.
 **Action:** Never serialize a previously parsed object back to a JSON string if the goal is only substring or regex extraction. Use the original raw payload string instead.
+
+## 2024-10-25 - Offloading DOM Filtering to CSS Selectors
+**Learning:** Iterating over thousands of elements and their children via JS to run Regex checks (e.g. searching for a video ID in `href` attributes) blocks the main thread heavily.
+**Action:** Offload deep filtering to the browser's C++ engine using CSS substring selectors (e.g. `a[href*="id"]`) and `.closest()` whenever possible.

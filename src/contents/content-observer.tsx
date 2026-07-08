@@ -318,12 +318,19 @@ const OverlayManager = () => {
   // ─── Block all DOM cards matching a videoId ─────────────────────────────────
   const blockCardsWithId = (videoId: string, reason: string) => {
     if (revealedVideoIds.current.has(videoId)) return
-    document.querySelectorAll<HTMLElement>(CARD_SELECTORS).forEach((el) => {
-      if (el.dataset.neoblockerBlocked === "true") return
-      if (getVideoId(el) === videoId) {
-        blockElement(el, reason, videoId)
-      }
-    })
+
+    // Bolt Optimization: Offload expensive JS regex and node iteration to the native C++ engine.
+    // Instead of querying all cards and checking their child links via JS `href.match()`,
+    // we use a CSS substring selector to find exactly the links containing the videoId,
+    // and then use `.closest()` to find their parent card container.
+    document
+      .querySelectorAll<HTMLAnchorElement>(`a[href*="${videoId}"]`)
+      .forEach((a) => {
+        const card = a.closest<HTMLElement>(CARD_SELECTORS)
+        if (card && card.dataset.neoblockerBlocked !== "true") {
+          blockElement(card, reason, videoId)
+        }
+      })
   }
 
   // ─── Reveal handlers ────────────────────────────────────────────────────────

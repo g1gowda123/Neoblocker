@@ -91,34 +91,32 @@ class ToxicityClassifier {
     if (this.initializationPromise) return this.initializationPromise
 
     // Prevent race conditions during concurrent accesses by caching the promise
-    if (!this.initializationPromise) {
-      console.log("[Neoblocker] Loading Toxicity model on CPU (WASM)...")
-      modelStatuses.toxicity = "loading"
-      broadcastStatus()
+    console.log("[Neoblocker] Loading Toxicity model on CPU (WASM)...")
+    modelStatuses.toxicity = "loading"
+    broadcastStatus()
 
-      this.initializationPromise = pipeline(
-        "text-classification",
-        TOXICITY_MODEL,
-        {
-          model_file_name: "../model"
-        }
-      )
-        .then((pipe) => {
-          this.instance = pipe as any
-          console.log("[Neoblocker] Toxicity model loaded.")
-          modelStatuses.toxicity = "loaded"
-          broadcastStatus()
-          return this.instance
-        })
-        .catch((err) => {
-          console.error("[Neoblocker] Failed to load Toxicity model:", err)
-          modelStatuses.toxicity = "error"
-          broadcastStatus()
-          this.instance = null
-          this.initializationPromise = null
-          throw err
-        })
-    }
+    this.initializationPromise = pipeline(
+      "text-classification",
+      TOXICITY_MODEL,
+      {
+        model_file_name: "../model"
+      }
+    )
+      .then((pipe) => {
+        this.instance = pipe as any
+        console.log("[Neoblocker] Toxicity model loaded.")
+        modelStatuses.toxicity = "loaded"
+        broadcastStatus()
+        return this.instance
+      })
+      .catch((err) => {
+        console.error("[Neoblocker] Failed to load Toxicity model:", err)
+        modelStatuses.toxicity = "error"
+        broadcastStatus()
+        this.instance = null
+        this.initializationPromise = null
+        throw err
+      })
 
     return this.initializationPromise
   }
@@ -185,30 +183,28 @@ class BiasClassifier {
     if (this.initializationPromise) return this.initializationPromise
 
     // Prevent race conditions during concurrent accesses by caching the promise
-    if (!this.initializationPromise) {
-      console.log("[Neoblocker] Loading Bias model on CPU (WASM)...")
-      modelStatuses.bias = "loading"
-      broadcastStatus()
+    console.log("[Neoblocker] Loading Bias model on CPU (WASM)...")
+    modelStatuses.bias = "loading"
+    broadcastStatus()
 
-      this.initializationPromise = pipeline("text-classification", BIAS_MODEL, {
-        model_file_name: "../model"
+    this.initializationPromise = pipeline("text-classification", BIAS_MODEL, {
+      model_file_name: "../model"
+    })
+      .then((pipe) => {
+        this.instance = pipe as any
+        console.log("[Neoblocker] Bias model loaded.")
+        modelStatuses.bias = "loaded"
+        broadcastStatus()
+        return this.instance
       })
-        .then((pipe) => {
-          this.instance = pipe as any
-          console.log("[Neoblocker] Bias model loaded.")
-          modelStatuses.bias = "loaded"
-          broadcastStatus()
-          return this.instance
-        })
-        .catch((err) => {
-          console.error("[Neoblocker] Failed to load Bias model:", err)
-          modelStatuses.bias = "error"
-          broadcastStatus()
-          this.instance = null
-          this.initializationPromise = null
-          throw err
-        })
-    }
+      .catch((err) => {
+        console.error("[Neoblocker] Failed to load Bias model:", err)
+        modelStatuses.bias = "error"
+        broadcastStatus()
+        this.instance = null
+        this.initializationPromise = null
+        throw err
+      })
 
     return this.initializationPromise
   }

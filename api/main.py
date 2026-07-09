@@ -87,7 +87,7 @@ async def verify_content(request: VerifyRequest):
                 # The result contains markdown string of the scraped page
                 context_markdown = result.markdown
         except Exception as e:
-            logger.error(f"Error crawling URL {sanitize_log(request.source_url)}: {e}")
+            logger.error(f"Error crawling URL {sanitize_log(request.source_url)}: {sanitize_log(str(e))}")
             # Proceed without context or fail. We proceed for resilience.
 
     try:
@@ -143,8 +143,8 @@ async def verify_content(request: VerifyRequest):
         )
 
     except json.JSONDecodeError as e:
-        logger.error(f"JSON Parsing Error: {e} | Response text was: {sanitize_log(response.text)}")
+        logger.error(f"JSON Parsing Error: {sanitize_log(str(e))} | Response text was: {sanitize_log(response.text)}")
         raise HTTPException(status_code=500, detail="Failed to parse LLM response")
     except Exception as e:
-        logger.error(f"GenAI Error: {e}")
+        logger.error(f"GenAI Error: {sanitize_log(str(e))}")
         raise HTTPException(status_code=500, detail="Internal Server Error during verification")

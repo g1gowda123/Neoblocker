@@ -1,21 +1,21 @@
 # Neoblocker
 
-Static blocklists cannot keep up with the volume of dynamic content on the modern web. I built Neoblocker to solve this problem by shifting from static lists to real-time analysis.
+Static blocklists just can't keep up with the sheer volume of dynamic content on the modern web. I built Neoblocker to solve this by shifting from static domain lists to real-time text analysis.
 
-This project is a strictly offline content firewall that runs directly inside your browser. Instead of relying on outdated lists of blocked domains, Neoblocker runs local machine learning models to analyze page text as you browse. We intercept and filter unwanted content locally before the browser paints it to the screen.
+This project is a strictly offline content firewall that runs directly inside your browser. Instead of relying on outdated blocklists, Neoblocker runs local machine learning models to analyze page content as you browse. We intercept and filter unwanted text locally before the browser even paints it to the screen.
 
 ## Key Features
 
 - **Local Inference:** I built this to guarantee zero external API calls. All text analysis happens securely on the client, so your browsing data never leaves your machine.
-- **Shadow DOM Isolation:** Injecting UI into arbitrary websites frequently breaks host layouts due to CSS collisions. We handle this by rendering the extension UI securely inside a Shadow DOM using React's `createPortal`.
-- **Dynamic CSS Scoping:** Host websites are unpredictable. To maintain consistent styling, we transform Tailwind CSS on the fly by replacing `:root` selectors with `:host(plasmo-csui)` and converting `rem` units to `px` based on a strict 16px baseline.
+- **Shadow DOM Isolation:** Injecting UI into arbitrary websites frequently breaks host layouts due to nasty CSS collisions. We handle this by rendering the extension UI securely inside a Shadow DOM using React's `createPortal`.
+- **Dynamic CSS Scoping:** Host websites are entirely unpredictable. To maintain consistent styling across any site, we transform Tailwind CSS on the fly. We do this by replacing `:root` selectors with `:host(plasmo-csui)` and converting `rem` units to `px` based on a strict 16px baseline.
 
 ## Tech Stack & Rationale
 
-I chose this stack to move fast while ensuring the injected UI remains robust, regardless of the CSS the host site uses.
+I chose this stack to move fast while ensuring the injected UI remains robust, regardless of whatever CSS the host site happens to use.
 
-- **Plasmo:** Building for Manifest V3 requires significant boilerplate. Plasmo acts as our build system, stripping out configuration overhead and providing reliable hot-reloading.
-- **React:** Managing the lifecycle of UI components isolated within a Shadow DOM gets messy. React handles our state and rendering logic cleanly, keeping the component tree manageable.
+- **Plasmo:** Building for Manifest V3 requires significant boilerplate. Plasmo acts as our build system, stripping out the configuration overhead and providing reliable hot-reloading.
+- **React:** Managing the lifecycle of UI components isolated within a Shadow DOM gets messy fast. React handles our state and rendering logic cleanly, keeping the component tree manageable.
 - **TailwindCSS:** I use Tailwind to iterate quickly on styling. By layering custom processing logic on top, we keep the speed of utility classes while preventing our CSS from leaking into the host page.
 - **@xenova/transformers:** This package is our core engine. We use it to run machine learning models locally via WebAssembly, powering real-time filtering completely offline without a backend server.
 

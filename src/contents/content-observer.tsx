@@ -160,8 +160,11 @@ const UNPROCESSED_CONTENT_SELECTORS = CONTENT_SELECTORS.split(",")
 /** Extract the 11-char video ID from any card element or the current URL (for Shorts player). */
 function getVideoId(el: HTMLElement): string {
   // Try anchor tags first (works for shelf cards and grid tiles)
-  // Bolt Optimization: Iterate over NodeList directly without creating an intermediate Array via Array.from() to avoid GC overhead
-  const links = el.querySelectorAll("a")
+  // Bolt Optimization: Offload filtering to the browser's native C++ engine using CSS substring selectors,
+  // drastically reducing the number of DOM nodes returned and regex evaluations in JavaScript.
+  const links = el.querySelectorAll<HTMLAnchorElement>(
+    'a[href*="v="], a[href*="/shorts/"]'
+  )
   for (let i = 0; i < links.length; i++) {
     const a = links[i]
     const href = a.getAttribute("href") || ""

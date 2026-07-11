@@ -86,19 +86,43 @@ async function fetchVideoData(
         captionTracks.find((track: any) => track.languageCode === "en") ||
         captionTracks[0]
       if (englishTrack && englishTrack.baseUrl) {
-        subtitlesPromise = fetch(englishTrack.baseUrl)
-          .then((r) => r.text())
-          .then((capXml) => {
-            let subtitles = capXml.replace(/<[^>]*>/g, " ")
-            return decodeHtmlEntities(subtitles)
-          })
-          .catch((err) => {
+        try {
+          // SSRF Protection: Validate the extracted subtitle URL before fetching.
+          // Since playerResponseJson is parsed via regex from HTML, attackers could inject
+          // fake JSON blocks into video metadata (like titles) to hijack the baseUrl.
+          const parsedUrl = new URL(
+            englishTrack.baseUrl,
+            "https://www.youtube.com"
+          )
+          if (
+            parsedUrl.protocol === "https:" &&
+            (parsedUrl.hostname.endsWith(".youtube.com") ||
+              parsedUrl.hostname.endsWith(".googlevideo.com") ||
+              parsedUrl.hostname === "www.youtube.com")
+          ) {
+            subtitlesPromise = fetch(parsedUrl.toString())
+              .then((r) => r.text())
+              .then((capXml) => {
+                let subtitles = capXml.replace(/<[^>]*>/g, " ")
+                return decodeHtmlEntities(subtitles)
+              })
+              .catch((err) => {
+                console.warn(
+                  `[Neoblocker] Failed to fetch subtitles for ${videoId}:`,
+                  err
+                )
+                return ""
+              })
+          } else {
             console.warn(
-              `[Neoblocker] Failed to fetch subtitles for ${videoId}:`,
-              err
+              `[Neoblocker] Blocked untrusted subtitle URL: ${englishTrack.baseUrl}`
             )
-            return ""
-          })
+          }
+        } catch (e) {
+          console.warn(
+            `[Neoblocker] Invalid subtitle URL format: ${englishTrack.baseUrl}`
+          )
+        }
       }
     }
 

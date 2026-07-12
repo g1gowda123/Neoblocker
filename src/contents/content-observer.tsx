@@ -143,7 +143,6 @@ const CARD_SELECTORS = [
 ].join(", ")
 
 const COMMENT_SELECTORS = [
-  "ytd-comment-thread-renderer",
   "ytd-comment-renderer"
 ].join(", ")
 
@@ -408,15 +407,6 @@ const OverlayManager = () => {
         target
           .querySelectorAll<HTMLElement>("ytd-reel-item-renderer")
           .forEach(processElement)
-        return
-      }
-
-      // Thread → delegate to the inner comment renderer
-      if (target.tagName === "YTD-COMMENT-THREAD-RENDERER") {
-        const commentRenderer = target.querySelector<HTMLElement>(
-          "ytd-comment-renderer"
-        )
-        if (commentRenderer) processElement(commentRenderer)
         return
       }
 

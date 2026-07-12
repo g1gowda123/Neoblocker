@@ -31,3 +31,7 @@
 ## 2024-10-25 - Offloading DOM Filtering to CSS Selectors
 **Learning:** Iterating over thousands of elements and their children via JS to run Regex checks (e.g. searching for a video ID in `href` attributes) blocks the main thread heavily.
 **Action:** Offload deep filtering to the browser's C++ engine using CSS substring selectors (e.g. `a[href*="id"]`) and `.closest()` whenever possible.
+
+## 2024-11-20 - Redundant DOM Processing in MutationObservers
+**Learning:** Using `document.querySelectorAll()` with overlapping CSS selectors (e.g. parent container and its children, like `ytd-comment-thread-renderer` and `ytd-comment-renderer`) inside a debounced `MutationObserver` leads to double-processing the same elements if the processing function iterates and delegates downward, causing significant CPU overhead.
+**Action:** When selecting elements for DOM processing, ensure CSS selectors are mutually exclusive to the specific leaf or target nodes you wish to process, rather than sweeping both parent and child nodes into the query list.

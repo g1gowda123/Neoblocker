@@ -46,7 +46,7 @@ async def verify_content(request: VerifyRequest):
 
         # Mitigate Argument Injection for Chromium crawler
         # Note: urlparse strips brackets from IPv6 hostnames, so we check the raw hex/colons
-        if not re.match(r"^([a-zA-Z0-9.-]+|[a-fA-F0-9:]+)$", parsed_url.hostname):
+        if not re.match(r"^([a-zA-Z0-9.-]+|[a-fA-F0-9:]+)\Z", parsed_url.hostname):
             raise HTTPException(status_code=400, detail="Invalid URL: Hostname contains invalid characters.")
 
         try:

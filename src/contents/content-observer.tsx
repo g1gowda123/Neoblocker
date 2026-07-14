@@ -304,7 +304,7 @@ const OverlayManager = () => {
     if (commentId) el.dataset.neoblockerCommentId = commentId
     if (!el.querySelector(".plasmo-firewall-mount")) {
       const mountNode = createMountNode(el)
-      const id = commentId || Math.random().toString(36).substring(7)
+      const id = commentId || crypto.randomUUID()
       setBlockedItems((prev) => [
         ...prev.filter((i) =>
           commentId ? i.commentId !== commentId : i.videoId !== videoId
@@ -435,7 +435,7 @@ const OverlayManager = () => {
 
         // Assign a stable ID so we can track and self-heal this comment
         if (!target.dataset.neoblockerCommentId) {
-          target.dataset.neoblockerCommentId = `c-${Math.random().toString(36).substring(7)}`
+          target.dataset.neoblockerCommentId = `c-${crypto.randomUUID()}`
         }
         const commentId = target.dataset.neoblockerCommentId
 
@@ -757,7 +757,7 @@ const OverlayManager = () => {
                 setBlockedItems((prev) => [
                   ...prev.filter((i) => i.videoId !== videoId),
                   {
-                    id: Math.random().toString(36).substring(7),
+                    id: crypto.randomUUID(),
                     element: mountNode,
                     reason,
                     videoId
@@ -864,7 +864,7 @@ const OverlayManager = () => {
               setBlockedItems((prev) => [
                 ...prev.filter((i) => i.videoId !== videoId),
                 {
-                  id: Math.random().toString(36).substring(7),
+                  id: crypto.randomUUID(),
                   element: mountNode,
                   reason,
                   videoId

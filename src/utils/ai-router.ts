@@ -62,9 +62,9 @@ export class NanoClassifier {
   static sessionPromise: Promise<any> | null = null
 
   static getSession() {
-    if (!this.sessionPromise) {
-      this.sessionPromise = (window as any).ai.createTextSession()
-    }
+    if (this.sessionPromise) return this.sessionPromise
+
+    this.sessionPromise = (self as any).ai.createTextSession()
     return this.sessionPromise
   }
 

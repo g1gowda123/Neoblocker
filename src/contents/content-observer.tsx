@@ -497,6 +497,16 @@ const OverlayManager = () => {
       const videoId = getVideoId(target)
       if (videoId && revealedVideoIds.current.has(videoId)) return
 
+      if (!videoId) return
+
+      // Bolt Optimization: Move cache check up to avoid expensive querySelector
+      // and string allocations for already blocked videos.
+      // If already confirmed blocked by cache
+      if (blockedVideoIds.current.has(videoId)) {
+        blockElement(target, blockedVideoIds.current.get(videoId)!, videoId)
+        return
+      }
+
       const settings = settingsRef.current
       const channelName = extractChannelName(target)
       const titleText = extractTitleText(target)
@@ -505,16 +515,8 @@ const OverlayManager = () => {
 
       // Banned keywords
       if (matchesBannedKeyword(settings, lowerTitle, lowerChannel)) {
-        if (videoId) blockedVideoIds.current.set(videoId, "Banned Keyword")
-        blockElement(target, "Banned Keyword", videoId || undefined)
-        return
-      }
-
-      if (!videoId) return
-
-      // If already confirmed blocked by cache
-      if (blockedVideoIds.current.has(videoId)) {
-        blockElement(target, blockedVideoIds.current.get(videoId)!, videoId)
+        blockedVideoIds.current.set(videoId, "Banned Keyword")
+        blockElement(target, "Banned Keyword", videoId)
         return
       }
 

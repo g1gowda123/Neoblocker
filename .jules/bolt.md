@@ -35,3 +35,7 @@
 ## 2024-11-20 - Redundant DOM Processing in MutationObservers
 **Learning:** Using `document.querySelectorAll()` with overlapping CSS selectors (e.g. parent container and its children, like `ytd-comment-thread-renderer` and `ytd-comment-renderer`) inside a debounced `MutationObserver` leads to double-processing the same elements if the processing function iterates and delegates downward, causing significant CPU overhead.
 **Action:** When selecting elements for DOM processing, ensure CSS selectors are mutually exclusive to the specific leaf or target nodes you wish to process, rather than sweeping both parent and child nodes into the query list.
+
+## 2024-11-21 - Early Cache Check in High-Frequency DOM Iterations
+**Learning:** Performing DOM queries (like `querySelector`) and string allocations (`.toLowerCase()`) *before* checking if an element's ID is already in a local blocking/allowlist cache wastes CPU cycles in high-frequency `MutationObserver` loops.
+**Action:** Always check local caches (like `Map.has(id)` or `Set.has(id)`) as early as possible in the processing logic, immediately after the unique ID is extracted, to bypass expensive operations.

@@ -802,7 +802,8 @@ const OverlayManager = () => {
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true,
+      // Bolt Optimization: Removed characterData: true to prevent severe CPU thrashing
+      // from continuous background text updates (like view counts or timestamps) on YouTube.
       attributes: true,
       attributeFilter: ["href", "is-active"]
     })

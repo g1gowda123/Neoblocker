@@ -35,3 +35,7 @@
 ## 2024-11-20 - Redundant DOM Processing in MutationObservers
 **Learning:** Using `document.querySelectorAll()` with overlapping CSS selectors (e.g. parent container and its children, like `ytd-comment-thread-renderer` and `ytd-comment-renderer`) inside a debounced `MutationObserver` leads to double-processing the same elements if the processing function iterates and delegates downward, causing significant CPU overhead.
 **Action:** When selecting elements for DOM processing, ensure CSS selectors are mutually exclusive to the specific leaf or target nodes you wish to process, rather than sweeping both parent and child nodes into the query list.
+
+## 2024-11-21 - MutationObserver Options Thrashing
+**Learning:** Setting `characterData: true` in global `MutationObserver` configurations on dynamic SPAs (like YouTube) causes severe CPU thrashing due to continuous background text updates (e.g., timestamps, view counts).
+**Action:** Avoid `characterData: true` for tracking structural DOM elements. Use `childList: true` and `attributes: true` instead to minimize redundant event triggering.

@@ -802,7 +802,6 @@ const OverlayManager = () => {
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true,
       attributes: true,
       attributeFilter: ["href", "is-active"]
     })

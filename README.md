@@ -1,27 +1,27 @@
 # Neoblocker
 
-The web moves too fast for static blocklists. I built Neoblocker because hardcoded domain lists simply cannot keep up with the volume of dynamic content. Instead of maintaining endless lists of bad URLs, this project shifts the focus to real-time content analysis.
+The web changes too fast for static blocklists. I built Neoblocker because relying on hardcoded domain lists is a losing battle against the sheer volume of dynamic content. Instead of managing endless lists of bad URLs, this project tackles the problem through real-time content analysis.
 
-Neoblocker is an offline content firewall that runs entirely in your browser. It uses WebAssembly to execute machine learning models locally, analyzing page text as you browse. The extension intercepts and filters unwanted content right before the browser paints it to the screen.
+Neoblocker acts as an offline content firewall directly in your browser. By leveraging WebAssembly, it runs machine learning models locally to analyze page text on the fly. The extension intercepts and filters out unwanted content immediately before the browser renders it to the screen.
 
 ## Key Features
 
-- **Local Inference:** I designed the system to run without any external API calls. All text analysis happens directly on the client, guaranteeing that your browsing data never leaves your machine.
-- **Shadow DOM Isolation:** Injecting an extension UI into random websites often breaks layouts due to CSS conflicts. We handle this by safely rendering the UI inside a Shadow DOM using React's `createPortal`.
-- **Dynamic CSS Scoping:** Host environments are unpredictable. To maintain consistent styling without polluting the host page, we transform Tailwind CSS at runtime. The build step replaces `:root` selectors with `:host(plasmo-csui)` and converts `rem` units to `px` against a strict 16px baseline.
+- **Local Inference:** I built this system to operate entirely offline. We do not make any external API calls for text analysis, guaranteeing that your browsing data never leaves your local machine.
+- **Shadow DOM Isolation:** Dropping a custom UI into arbitrary web pages usually breaks things due to CSS collisions. We handle this by safely injecting the extension UI into a Shadow DOM via React's `createPortal`.
+- **Dynamic CSS Scoping:** You cannot predict a host environment's styles. To enforce consistent styling without leaking our CSS onto the host page, we intercept and transform Tailwind CSS during the build process. We specifically replace `:root` selectors with `:host(plasmo-csui)` and convert `rem` units to strict `px` values tied to a 16px baseline.
 
 ## Tech Stack & Rationale
 
-I chose these tools to keep iteration speed high while ensuring our injected components stay completely isolated, no matter how chaotic the host CSS is.
+I chose these tools to maximize development speed while ensuring our injected components remain strictly isolated from chaotic host stylesheets.
 
-- **Plasmo:** Manifest V3 extensions require significant boilerplate. I use Plasmo as the build system because it handles the configuration overhead and provides reliable hot-reloading out of the box.
-- **React:** Managing UI component lifecycles inside a Shadow DOM is tricky. React cleanly handles state and rendering logic, which keeps the component tree maintainable.
-- **TailwindCSS:** Tailwind lets me style components quickly. By adding custom processing logic during the build, we get the speed of utility classes while strictly preventing our CSS from leaking into the host layout.
-- **@xenova/transformers:** This is the core engine of the extension. It allows us to execute machine learning models locally via WebAssembly, powering the real-time filtering offline without needing a backend server.
+- **Plasmo:** Building for Manifest V3 involves a lot of boilerplate. I use Plasmo as our build system because it abstracts away the complex configuration and gives us reliable hot-reloading out of the box.
+- **React:** Handling UI component lifecycles inside a Shadow DOM gets complicated fast. React handles the state and rendering logic efficiently, keeping the entire component tree predictable and maintainable.
+- **TailwindCSS:** Tailwind lets me iterate on styles rapidly. By hooking into the build step to process the CSS, we retain the speed of utility classes while structurally preventing any layout leakage.
+- **@xenova/transformers:** This serves as the core classification engine. It lets us run machine learning models directly in the browser using WebAssembly, enabling fast, offline, and private real-time filtering without relying on a remote server.
 
 ## Setup & Usage
 
-To build and run the project locally, follow these steps:
+To build and run the project locally, follow these steps.
 
 1. Install the dependencies:
 ```bash
@@ -34,14 +34,14 @@ npm run dev
 ```
 
 Once the development server is running, load the unpacked extension into Chrome:
-- Navigate to `chrome://extensions/`.
-- Toggle **Developer mode** on.
+- Open Chrome and navigate to `chrome://extensions/`.
+- Toggle **Developer mode** on in the top right corner.
 - Click **Load unpacked**.
-- Select the `build/chrome-mv3-dev` directory.
+- Select the `build/chrome-mv3-dev` directory generated by the build process.
 
 To create an optimized production build, run:
 ```bash
 npm run build
 ```
 
-This generates the final bundle, ready to zip and publish.
+This generates the final bundled extension, ready to zip and publish.

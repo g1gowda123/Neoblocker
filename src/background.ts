@@ -96,9 +96,10 @@ async function fetchVideoData(
           )
           if (
             parsedUrl.protocol === "https:" &&
-            (parsedUrl.hostname.endsWith(".youtube.com") ||
-              parsedUrl.hostname.endsWith(".googlevideo.com") ||
-              parsedUrl.hostname === "www.youtube.com")
+            (parsedUrl.hostname === "youtube.com" ||
+              parsedUrl.hostname.endsWith(".youtube.com") ||
+              parsedUrl.hostname === "googlevideo.com" ||
+              parsedUrl.hostname.endsWith(".googlevideo.com"))
           ) {
             subtitlesPromise = fetch(parsedUrl.toString())
               .then((r) => r.text())

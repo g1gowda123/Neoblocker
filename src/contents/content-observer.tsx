@@ -142,9 +142,7 @@ const CARD_SELECTORS = [
   "ytd-ad-slot-renderer"
 ].join(", ")
 
-const COMMENT_SELECTORS = [
-  "ytd-comment-renderer"
-].join(", ")
+const COMMENT_SELECTORS = ["ytd-comment-renderer"].join(", ")
 
 const CONTENT_SELECTORS = CARD_SELECTORS + ", " + COMMENT_SELECTORS
 const UNPROCESSED_CONTENT_SELECTORS = CONTENT_SELECTORS.split(",")
@@ -237,6 +235,7 @@ const OverlayManager = () => {
         filterModeRef.current = mode
         setFilterMode(mode)
         textAnalysisCache.current.clear()
+        processedElementsCache.current = new WeakMap()
       })
     }
     loadSettings()
@@ -246,6 +245,7 @@ const OverlayManager = () => {
 
   // ─── Concurrency queue for deep video analysis ─────────────────────────────
   const requestQueue = useRef<string[]>([])
+  const processedElementsCache = useRef(new WeakMap<HTMLElement, string>())
   const activeRequests = useRef(0)
   const MAX_CONCURRENCY = 5
 
@@ -431,6 +431,11 @@ const OverlayManager = () => {
         if (commentText.length < 5) return
 
         const lowerText = commentText.toLowerCase()
+
+        // Bolt Optimization: Prevent redundant text analysis and string allocations on unchanged comments
+        if (processedElementsCache.current.get(target) === commentText) return
+        processedElementsCache.current.set(target, commentText)
+
         const settings = settingsRef.current
 
         // Assign a stable ID so we can track and self-heal this comment
@@ -496,6 +501,12 @@ const OverlayManager = () => {
 
       const videoId = getVideoId(target)
       if (videoId && revealedVideoIds.current.has(videoId)) return
+
+      // Bolt Optimization: Prevent redundant text extraction and DOM querying on unchanged videos
+      // Ensure we only cache and early-return if we actually extracted a valid video ID or string context.
+      const cacheKey = videoId || (target.textContent || "").substring(0, 100)
+      if (processedElementsCache.current.get(target) === cacheKey) return
+      processedElementsCache.current.set(target, cacheKey)
 
       const settings = settingsRef.current
       const channelName = extractChannelName(target)

@@ -1,23 +1,23 @@
 # Neoblocker
 
-The web changes too fast for static blocklists. I built Neoblocker because relying on hardcoded domain lists is a losing battle against the sheer volume of dynamic content. Instead of managing endless lists of bad URLs, this project tackles the problem through real-time content analysis.
+I built Neoblocker because static blocklists just cannot keep up with the modern web. Managing hardcoded lists of bad domains is a losing battle against dynamic content. Instead of playing whack-a-mole with URLs, this project solves the problem through real-time content analysis.
 
-Neoblocker acts as an offline content firewall directly in your browser. By leveraging WebAssembly, it runs machine learning models locally to analyze page text on the fly. The extension intercepts and filters out unwanted content immediately before the browser renders it to the screen.
+Neoblocker is an offline content firewall that runs directly inside your browser. I use WebAssembly to run local machine learning models that analyze page text on the fly. The extension intercepts the DOM and filters out unwanted content right before the browser renders it to the screen.
 
 ## Key Features
 
-- **Local Inference:** I built this system to operate entirely offline. We do not make any external API calls for text analysis, guaranteeing that your browsing data never leaves your local machine.
-- **Shadow DOM Isolation:** Dropping a custom UI into arbitrary web pages usually breaks things due to CSS collisions. We handle this by safely injecting the extension UI into a Shadow DOM via React's `createPortal`.
-- **Dynamic CSS Scoping:** You cannot predict a host environment's styles. To enforce consistent styling without leaking our CSS onto the host page, we intercept and transform Tailwind CSS during the build process. We specifically replace `:root` selectors with `:host(plasmo-csui)` and convert `rem` units to strict `px` values tied to a 16px baseline.
+- **Local Inference:** I designed this to run completely offline. We make zero external API calls for text analysis, guaranteeing that your browsing data never leaves your machine.
+- **Shadow DOM Isolation:** Dropping a custom UI into arbitrary web pages is a nightmare for CSS collisions. We handle this by injecting the extension's UI into a Shadow DOM using React's `createPortal`.
+- **Dynamic CSS Scoping:** You cannot trust a host page's styles. To keep our styling consistent without bleeding CSS onto the host, we intercept and transform Tailwind CSS during the build process. We specifically replace `:root` selectors with `:host(plasmo-csui)` and convert `rem` units into strict `px` values mapped to a 16px baseline.
 
 ## Tech Stack & Rationale
 
-I chose these tools to maximize development speed while ensuring our injected components remain strictly isolated from chaotic host stylesheets.
+I chose these tools to move fast while ensuring the injected components stay strictly isolated from chaotic host stylesheets.
 
-- **Plasmo:** Building for Manifest V3 involves a lot of boilerplate. I use Plasmo as our build system because it abstracts away the complex configuration and gives us reliable hot-reloading out of the box.
-- **React:** Handling UI component lifecycles inside a Shadow DOM gets complicated fast. React handles the state and rendering logic efficiently, keeping the entire component tree predictable and maintainable.
-- **TailwindCSS:** Tailwind lets me iterate on styles rapidly. By hooking into the build step to process the CSS, we retain the speed of utility classes while structurally preventing any layout leakage.
-- **@xenova/transformers:** This serves as the core classification engine. It lets us run machine learning models directly in the browser using WebAssembly, enabling fast, offline, and private real-time filtering without relying on a remote server.
+- **Plasmo:** Writing Manifest V3 extensions requires a ton of boilerplate. I use Plasmo as the build system because it abstracts away the complex configuration and provides reliable hot-reloading out of the box.
+- **React:** Managing UI lifecycles inside a Shadow DOM gets complicated quickly. React handles the state and rendering logic, which keeps the component tree predictable and maintainable.
+- **TailwindCSS:** Tailwind lets me iterate on UI rapidly. By processing the CSS during the build step, we keep the speed of utility classes but structurally prevent layout leaks.
+- **@xenova/transformers:** This is the core classification engine. It lets us run machine learning models via WebAssembly directly in the browser, enabling fast, private, offline filtering without needing a remote server.
 
 ## Setup & Usage
 

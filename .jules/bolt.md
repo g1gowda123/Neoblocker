@@ -39,3 +39,6 @@
 ## 2024-11-21 - Avoiding characterData in global MutationObserver
 **Learning:** Setting `characterData: true` in global `MutationObserver` configurations (e.g., on `document.body`) in dynamic SPAs like YouTube causes severe CPU thrashing due to continuous background text updates (e.g., timestamps, view counts).
 **Action:** Avoid `characterData: true` in global observers. Use `childList: true` and `attributes: true` instead for tracking structural DOM element additions or state changes.
+## 2024-11-25 - Redundant Work on Safe Elements in MutationObserver
+**Learning:** During fast-firing `MutationObserver` events, repeated text extraction (like `textContent`) and string manipulations (like `toLowerCase` or regex trimming) on DOM elements that were previously verified as safe or already processed cause significant main thread CPU blocking. Additionally, using standard `Map`s or `data-*` attributes for tracking processed status can cause memory leaks or incorrect state persistence in platforms using DOM recycling (like YouTube).
+**Action:** Use a `WeakMap<HTMLElement, string>` to cache the last processed state/text of DOM nodes within `MutationObserver` callbacks. This avoids repetitive string operations and prevents memory leaks since `WeakMap` keys are garbage collected alongside the DOM elements.

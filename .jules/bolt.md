@@ -42,3 +42,7 @@
 ## 2024-11-25 - Redundant Work on Safe Elements in MutationObserver
 **Learning:** During fast-firing `MutationObserver` events, repeated text extraction (like `textContent`) and string manipulations (like `toLowerCase` or regex trimming) on DOM elements that were previously verified as safe or already processed cause significant main thread CPU blocking. Additionally, using standard `Map`s or `data-*` attributes for tracking processed status can cause memory leaks or incorrect state persistence in platforms using DOM recycling (like YouTube).
 **Action:** Use a `WeakMap<HTMLElement, string>` to cache the last processed state/text of DOM nodes within `MutationObserver` callbacks. This avoids repetitive string operations and prevents memory leaks since `WeakMap` keys are garbage collected alongside the DOM elements.
+
+## 2024-11-26 - Hoisting Cache Verification above Allocations
+**Learning:** Checking a cache using a key that requires string manipulations (like `.replace`, `.trim`, or `.toLowerCase`) inside a high-frequency `MutationObserver` defeats the purpose of the cache if the strings are newly allocated every time before the short-circuit condition is met.
+**Action:** Always use the raw underlying DOM property (e.g., `textContent`) as the cache key *before* performing any string parsing, normalization, or allocations, so that the cache can short-circuit early and avoid thrashing the garbage collector.

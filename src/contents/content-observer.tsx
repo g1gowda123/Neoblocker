@@ -425,16 +425,18 @@ const OverlayManager = () => {
 
         const contentEl = target.querySelector("#content-text")
         if (!contentEl) return
-        const commentText = (contentEl.textContent || "")
-          .replace(/\s+/g, " ")
-          .trim()
+
+        const rawText = contentEl.textContent || ""
+
+        // Bolt Optimization: Prevent redundant text analysis and string allocations on unchanged comments.
+        // Use the raw text as the cache key BEFORE any expensive string manipulation or regex occurs.
+        if (processedElementsCache.current.get(target) === rawText) return
+        processedElementsCache.current.set(target, rawText)
+
+        const commentText = rawText.replace(/\s+/g, " ").trim()
         if (commentText.length < 5) return
 
         const lowerText = commentText.toLowerCase()
-
-        // Bolt Optimization: Prevent redundant text analysis and string allocations on unchanged comments
-        if (processedElementsCache.current.get(target) === commentText) return
-        processedElementsCache.current.set(target, commentText)
 
         const settings = settingsRef.current
 

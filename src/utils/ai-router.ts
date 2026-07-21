@@ -81,7 +81,6 @@ export class NanoClassifier {
 }
 
 class ToxicityClassifier {
-  static instance: ReturnType<typeof pipeline> | null = null
   // Bolt Optimization: Cache the Promise rather than the resolved object to prevent race conditions
   // where multiple concurrent requests for the same text trigger redundant, parallel pipeline executions.
   private static cache = new Map<string, Promise<Record<string, number>>>()
@@ -103,17 +102,15 @@ class ToxicityClassifier {
       }
     )
       .then((pipe) => {
-        this.instance = pipe as any
         console.log("[Neoblocker] Toxicity model loaded.")
         modelStatuses.toxicity = "loaded"
         broadcastStatus()
-        return this.instance
+        return pipe as any
       })
       .catch((err) => {
         console.error("[Neoblocker] Failed to load Toxicity model:", err)
         modelStatuses.toxicity = "error"
         broadcastStatus()
-        this.instance = null
         this.initializationPromise = null
         throw err
       })
@@ -122,7 +119,6 @@ class ToxicityClassifier {
   }
 
   static unload() {
-    this.instance = null
     this.initializationPromise = null
     modelStatuses.toxicity = "idle"
     broadcastStatus()
@@ -173,7 +169,6 @@ const BIAS_MODEL = "protectai/distilroberta-bias-onnx"
 const BIAS_THRESHOLD = 0.5
 
 class BiasClassifier {
-  static instance: ReturnType<typeof pipeline> | null = null
   // Bolt Optimization: Cache the Promise rather than the resolved object to prevent race conditions
   // where multiple concurrent requests for the same text trigger redundant, parallel pipeline executions.
   private static cache = new Map<string, Promise<number>>()
@@ -191,17 +186,15 @@ class BiasClassifier {
       model_file_name: "../model"
     })
       .then((pipe) => {
-        this.instance = pipe as any
         console.log("[Neoblocker] Bias model loaded.")
         modelStatuses.bias = "loaded"
         broadcastStatus()
-        return this.instance
+        return pipe as any
       })
       .catch((err) => {
         console.error("[Neoblocker] Failed to load Bias model:", err)
         modelStatuses.bias = "error"
         broadcastStatus()
-        this.instance = null
         this.initializationPromise = null
         throw err
       })
@@ -210,7 +203,6 @@ class BiasClassifier {
   }
 
   static unload() {
-    this.instance = null
     this.initializationPromise = null
     modelStatuses.bias = "idle"
     broadcastStatus()

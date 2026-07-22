@@ -46,3 +46,6 @@
 ## 2024-11-26 - Hoisting Cache Verification above Allocations
 **Learning:** Checking a cache using a key that requires string manipulations (like `.replace`, `.trim`, or `.toLowerCase`) inside a high-frequency `MutationObserver` defeats the purpose of the cache if the strings are newly allocated every time before the short-circuit condition is met.
 **Action:** Always use the raw underlying DOM property (e.g., `textContent`) as the cache key *before* performing any string parsing, normalization, or allocations, so that the cache can short-circuit early and avoid thrashing the garbage collector.
+## 2024-11-26 - Offloading Regex Execution to Native IndexOf
+**Learning:** Running `new RegExp(...).exec(html)` on extremely large HTML strings (like YouTube's full page source) blocks the main thread severely due to the complexity of regex engine evaluation on large payloads.
+**Action:** When searching for specific, mostly-static string patterns within massive payloads, use native `indexOf()` checks for the most common formatting variations first, and only fall back to a full regex execution if those fast paths fail.

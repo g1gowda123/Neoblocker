@@ -20,11 +20,26 @@ function decodeHtmlEntities(str: string): string {
 }
 
 function extractJsonBlock(html: string, varName: string): string | null {
-  const regex = new RegExp(`${varName}\\s*=\\s*({)`)
-  const match = regex.exec(html)
-  if (!match) return null
+  // Bolt Optimization: Offload expensive regex evaluation on large HTML payloads to native indexOf.
+  const targetStr1 = varName + " = {"
+  const targetStr2 = varName + "={"
+  let startIndex = html.indexOf(targetStr1)
 
-  const startIndex = match.index + match[0].length - 1 // Index of the opening brace '{'
+  if (startIndex !== -1) {
+    startIndex += targetStr1.length - 1 // point to '{'
+  } else {
+    startIndex = html.indexOf(targetStr2)
+    if (startIndex !== -1) {
+      startIndex += targetStr2.length - 1
+    } else {
+      // Fallback
+      const regex = new RegExp(`${varName}\\s*=\\s*({)`)
+      const match = regex.exec(html)
+      if (!match) return null
+      startIndex = match.index + match[0].length - 1 // Index of the opening brace '{'
+    }
+  }
+
   let depth = 0
   let inString = false
   let escape = false

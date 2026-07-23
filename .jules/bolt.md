@@ -49,3 +49,6 @@
 ## 2024-11-26 - Offloading Regex Execution to Native IndexOf
 **Learning:** Running `new RegExp(...).exec(html)` on extremely large HTML strings (like YouTube's full page source) blocks the main thread severely due to the complexity of regex engine evaluation on large payloads.
 **Action:** When searching for specific, mostly-static string patterns within massive payloads, use native `indexOf()` checks for the most common formatting variations first, and only fall back to a full regex execution if those fast paths fail.
+## 2024-11-28 - Optimizing String Searches within Arrays
+**Learning:** Checking for the presence of multiple static substring keywords inside a large dynamically changing string (e.g., `HATE_KEYWORDS.some(kw => text.includes(kw))`) forces multiple sequential passes over the same string and scales linearly with the number of keywords.
+**Action:** Pre-compile static substring sets into a single regular expression (e.g., `new RegExp(keywords.join('|'), 'i')`) and evaluate them simultaneously using `.test()`. This allows the JS engine's highly optimized regex C++ backend to search the target string in a single pass.

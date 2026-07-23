@@ -297,6 +297,13 @@ const HATE_KEYWORDS = [
   "racism"
 ]
 
+// Bolt Optimization: Pre-compile static hate keywords into a single regex to avoid
+// repeated array iteration and multiple string searches per analysis.
+const HATE_REGEX = new RegExp(
+  `(${HATE_KEYWORDS.map((kw) => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")).join("|")})`,
+  "i"
+)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Entry Point: analyzeContent
 // ─────────────────────────────────────────────────────────────────────────────
@@ -365,7 +372,7 @@ export async function analyzeContent(
     const sexual_explicit = toxScores["sexual_explicit"] || 0
 
     // Elevate identity attack score for explicit hate speech/extremist keywords (e.g. kkk, white supremacist, grand wizard, racist)
-    const hasHateKeyword = HATE_KEYWORDS.some((kw) => lowerText.includes(kw))
+    const hasHateKeyword = HATE_REGEX.test(lowerText)
     if (hasHateKeyword && settings.enableToxicity) {
       console.log(
         "[Neoblocker] Hate/racism topic keyword detected. Elevating identity_attack score to 0.85."

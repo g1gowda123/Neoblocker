@@ -52,3 +52,6 @@
 ## 2024-11-28 - Optimizing String Searches within Arrays
 **Learning:** Checking for the presence of multiple static substring keywords inside a large dynamically changing string (e.g., `HATE_KEYWORDS.some(kw => text.includes(kw))`) forces multiple sequential passes over the same string and scales linearly with the number of keywords.
 **Action:** Pre-compile static substring sets into a single regular expression (e.g., `new RegExp(keywords.join('|'), 'i')`) and evaluate them simultaneously using `.test()`. This allows the JS engine's highly optimized regex C++ backend to search the target string in a single pass.
+## 2024-11-28 - Optimizing String Searches within Arrays
+**Learning:** Checking for the presence of multiple static substring keywords inside a large dynamically changing string (e.g., `HATE_KEYWORDS.some(kw => text.includes(kw))`) forces multiple sequential passes over the same string and scales linearly with the number of keywords.
+**Action:** Pre-compile static substring sets into a single regular expression (e.g., `new RegExp(keywords.join('|'), 'i')`) and evaluate them simultaneously using `.test()`. This allows the JS engine's highly optimized regex C++ backend to search the target string in a single pass.

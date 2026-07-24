@@ -906,46 +906,52 @@ const OverlayManager = () => {
 }
 
 // ─── Utility: keyword helpers ─────────────────────────────────────────────────
-// Bolt Optimization: Cache the parsed array of banned keywords to avoid repeated
+// Bolt Optimization: Cache the parsed RegExp of banned keywords to avoid repeated
 // string allocations and parsing logic inside high-frequency DOM iteration loops.
 let cachedBannedKeywordString: string | null = null
-let cachedBannedKeywordArray: string[] = []
+let cachedBannedKeywordRegex: RegExp | null = null
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
 
 function matchesBannedKeyword(settings: any, ...texts: string[]): boolean {
   const raw =
     typeof settings.bannedKeywords === "string" ? settings.bannedKeywords : ""
   if (raw !== cachedBannedKeywordString) {
     cachedBannedKeywordString = raw
-    cachedBannedKeywordArray = raw
+    const arr = raw
       .split(",")
       .map((k: string) => k.trim().toLowerCase())
       .filter(Boolean)
+    cachedBannedKeywordRegex =
+      arr.length > 0 ? new RegExp(arr.map(escapeRegex).join("|"), "i") : null
   }
   return (
-    cachedBannedKeywordArray.length > 0 &&
-    texts.some((t) =>
-      cachedBannedKeywordArray.some((kw: string) => t.includes(kw))
-    )
+    cachedBannedKeywordRegex !== null &&
+    texts.some((t) => cachedBannedKeywordRegex!.test(t))
   )
 }
 
-// Bolt Optimization: Cache the parsed array of exception keywords similarly
+// Bolt Optimization: Cache the parsed RegExp of exception keywords similarly
 // to avoid repeated parsing logic inside tight loops.
 let cachedExceptionString: string | null = null
-let cachedExceptionArray: string[] = []
+let cachedExceptionRegex: RegExp | null = null
 
 function matchesException(settings: any, ...texts: string[]): boolean {
   const raw = typeof settings.exceptions === "string" ? settings.exceptions : ""
   if (raw !== cachedExceptionString) {
     cachedExceptionString = raw
-    cachedExceptionArray = raw
+    const arr = raw
       .split(",")
       .map((k: string) => k.trim().toLowerCase())
       .filter(Boolean)
+    cachedExceptionRegex =
+      arr.length > 0 ? new RegExp(arr.map(escapeRegex).join("|"), "i") : null
   }
   return (
-    cachedExceptionArray.length > 0 &&
-    texts.some((t) => cachedExceptionArray.some((kw: string) => t.includes(kw)))
+    cachedExceptionRegex !== null &&
+    texts.some((t) => cachedExceptionRegex!.test(t))
   )
 }
 

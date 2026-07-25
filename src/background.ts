@@ -152,38 +152,41 @@ async function fetchVideoData(
       const tokenMatch = playerResponseJson.match(/"token":"([^"]+)"/)
       if (tokenMatch) {
         const token = tokenMatch[1]
-        commentsPromise = fetch(
-          `https://www.youtube.com/youtubei/v1/next?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              context: {
-                client: { clientName: "WEB", clientVersion: "2.20240308.00.00" }
-              },
-              continuation: token
-            })
-          }
-        )
-          .then((r) => r.json())
-          .then((nextJson) => {
-            const commentList: string[] = []
-            const mutations =
-              nextJson.frameworkUpdates?.entityBatchUpdate?.mutations || []
-            for (const m of mutations) {
-              const content =
-                m.payload?.commentEntityPayload?.properties?.content?.content
-              if (content) commentList.push(content)
+        // Security Enhancement: Validate length to prevent Application-Layer DoS, and encode URI component to prevent parameter injection
+        if (apiKey.length < 150 && token.length < 5000) {
+          commentsPromise = fetch(
+            `https://www.youtube.com/youtubei/v1/next?key=${encodeURIComponent(apiKey)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                context: {
+                  client: { clientName: "WEB", clientVersion: "2.20240308.00.00" }
+                },
+                continuation: token
+              })
             }
-            return commentList.join(" ")
-          })
-          .catch((err) => {
-            console.warn(
-              `[Neoblocker] Failed to fetch comments for ${videoId}:`,
-              err
-            )
-            return ""
-          })
+          )
+            .then((r) => r.json())
+            .then((nextJson) => {
+              const commentList: string[] = []
+              const mutations =
+                nextJson.frameworkUpdates?.entityBatchUpdate?.mutations || []
+              for (const m of mutations) {
+                const content =
+                  m.payload?.commentEntityPayload?.properties?.content?.content
+                if (content) commentList.push(content)
+              }
+              return commentList.join(" ")
+            })
+            .catch((err) => {
+              console.warn(
+                `[Neoblocker] Failed to fetch comments for ${videoId}:`,
+                err
+              )
+              return ""
+            })
+        }
       }
     }
 

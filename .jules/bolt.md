@@ -55,3 +55,6 @@
 ## 2024-11-28 - Optimizing String Searches within Arrays
 **Learning:** Checking for the presence of multiple static substring keywords inside a large dynamically changing string (e.g., `HATE_KEYWORDS.some(kw => text.includes(kw))`) forces multiple sequential passes over the same string and scales linearly with the number of keywords.
 **Action:** Pre-compile static substring sets into a single regular expression (e.g., `new RegExp(keywords.join('|'), 'i')`) and evaluate them simultaneously using `.test()`. This allows the JS engine's highly optimized regex C++ backend to search the target string in a single pass.
+## 2025-02-25 - [Optimize Substring Array Matching to Regex]
+**Learning:** [Using `array.find(kw => string.includes(kw))` performs an O(N * M) check that can be slow in high-frequency analysis loops against large strings, forcing sequential passes. Pre-compiling the keywords into a single `RegExp` (e.g. `new RegExp(keywords.join('|'), "i")`) and using `.test()` allows the JS engine (like V8) to perform an optimized single-pass evaluation, significantly improving performance.]
+**Action:** [When checking a large text against an array of static or infrequently changing substring keywords in performance-critical paths, always pre-compile them into a single `RegExp` and cache it to avoid redundant compilation and allocations.]

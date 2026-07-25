@@ -286,7 +286,7 @@ function normalizeText(str: string): string {
 // Bolt Optimization: Cache the parsed array of exception keywords and static configurations
 // to avoid repeated parsing logic and memory allocations inside high-frequency analysis loops.
 let cachedExceptionString: string | null = null
-let cachedExceptionArray: string[] = []
+let cachedExceptionRegex: RegExp | null = null
 
 const HATE_KEYWORDS = [
   "kkk",
@@ -322,19 +322,18 @@ export async function analyzeContent(
       typeof settings.exceptions === "string" ? settings.exceptions : ""
     if (rawExceptions !== cachedExceptionString) {
       cachedExceptionString = rawExceptions
-      cachedExceptionArray = rawExceptions
+      const arr = rawExceptions
         .split(",")
         .map((kw) => kw.trim().toLowerCase())
         .filter((kw) => kw.length > 0)
+      cachedExceptionRegex =
+        arr.length > 0 ? new RegExp(arr.map((kw) => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")).join("|"), "i") : null
     }
 
-    if (cachedExceptionArray.length > 0) {
-      const matchedKeyword = cachedExceptionArray.find((kw) =>
-        lowerText.includes(kw)
-      )
-      if (matchedKeyword) {
+    if (cachedExceptionRegex !== null) {
+      if (cachedExceptionRegex.test(lowerText)) {
         console.log(
-          `[Neoblocker] Exception matched: "${matchedKeyword}". Bypassing analysis.`
+          `[Neoblocker] Exception matched. Bypassing analysis.`
         )
         return { action: "SAFE" }
       }

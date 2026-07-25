@@ -1,16 +1,19 @@
 # Neoblocker
+<!-- Introduction -->
 
 I built Neoblocker because static blocklists cannot keep up with the modern web. Managing hardcoded lists of bad domains is a losing battle against dynamic content. Instead of playing whack-a-mole with URLs, we filter based on real-time content analysis.
 
-Neoblocker is an offline content firewall that runs directly inside your browser. I use WebAssembly to run local machine learning models that analyze page text on the fly. It intercepts the DOM and filters unwanted content before the browser renders it.
+Neoblocker is an offline content firewall that runs directly inside your browser. I use WebAssembly to run local machine learning models that analyze page text on the fly, intercepting the DOM to filter unwanted content before the browser renders it.
 
 ## Key Features
+<!-- Key Features breakdown -->
 
 - **Local Inference:** I designed this to run completely offline. We make zero external API calls for text analysis, so your browsing data never leaves your machine.
 - **Shadow DOM Isolation:** Dropping a custom UI into arbitrary web pages is a nightmare for CSS collisions. We handle this by injecting the extension's UI into a Shadow DOM using React's `createPortal`.
 - **Dynamic CSS Scoping:** You cannot trust a host page's styles. To keep styling consistent without bleeding CSS onto the host, we intercept and transform Tailwind CSS during the build. We replace `:root` selectors with `:host(plasmo-csui)` and convert `rem` units into strict `px` values mapped to a 16px baseline.
 
 ## Tech Stack & Rationale
+<!-- Architecture mapping -->
 
 I chose these tools to move fast while ensuring the injected components stay strictly isolated from chaotic host stylesheets.
 
@@ -20,6 +23,7 @@ I chose these tools to move fast while ensuring the injected components stay str
 - **@xenova/transformers:** The core classification engine. It runs machine learning models via WebAssembly directly in the browser for fast, private, offline filtering without a remote server.
 
 ## Setup & Usage
+<!-- Local development commands -->
 
 To build and run the project locally:
 

@@ -58,3 +58,7 @@
 ## 2025-02-25 - [Optimize Substring Array Matching to Regex]
 **Learning:** [Using `array.find(kw => string.includes(kw))` performs an O(N * M) check that can be slow in high-frequency analysis loops against large strings, forcing sequential passes. Pre-compiling the keywords into a single `RegExp` (e.g. `new RegExp(keywords.join('|'), "i")`) and using `.test()` allows the JS engine (like V8) to perform an optimized single-pass evaluation, significantly improving performance.]
 **Action:** [When checking a large text against an array of static or infrequently changing substring keywords in performance-critical paths, always pre-compile them into a single `RegExp` and cache it to avoid redundant compilation and allocations.]
+
+## 2024-07-26 - Eliminate Rest Parameters and Array Methods in Hot Paths
+**Learning:** Using rest parameters (e.g. `...texts: string[]`) and array methods like `.some(t => regex.test(t))` inside high-frequency execution paths (such as `MutationObserver` callbacks) causes continuous allocation of new arrays and closure functions. This creates massive garbage collection (GC) thrashing and slows down the main thread, especially on pages with rapid DOM mutations like YouTube.
+**Action:** When a function in a hot path only expects a fixed small number of arguments (e.g. 1 or 2 strings), use explicit optional parameters (`text1: string, text2?: string`) and simple `if` checks instead of rest parameters and array methods.

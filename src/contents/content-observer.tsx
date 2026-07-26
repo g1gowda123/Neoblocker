@@ -915,7 +915,7 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-function matchesBannedKeyword(settings: any, ...texts: string[]): boolean {
+function matchesBannedKeyword(settings: any, text1: string, text2?: string): boolean {
   const raw =
     typeof settings.bannedKeywords === "string" ? settings.bannedKeywords : ""
   if (raw !== cachedBannedKeywordString) {
@@ -927,10 +927,10 @@ function matchesBannedKeyword(settings: any, ...texts: string[]): boolean {
     cachedBannedKeywordRegex =
       arr.length > 0 ? new RegExp(arr.map(escapeRegex).join("|"), "i") : null
   }
-  return (
-    cachedBannedKeywordRegex !== null &&
-    texts.some((t) => cachedBannedKeywordRegex!.test(t))
-  )
+  if (cachedBannedKeywordRegex === null) return false
+  if (cachedBannedKeywordRegex.test(text1)) return true
+  if (text2 !== undefined && cachedBannedKeywordRegex.test(text2)) return true
+  return false
 }
 
 // Bolt Optimization: Cache the parsed RegExp of exception keywords similarly
@@ -938,7 +938,7 @@ function matchesBannedKeyword(settings: any, ...texts: string[]): boolean {
 let cachedExceptionString: string | null = null
 let cachedExceptionRegex: RegExp | null = null
 
-function matchesException(settings: any, ...texts: string[]): boolean {
+function matchesException(settings: any, text1: string, text2?: string): boolean {
   const raw = typeof settings.exceptions === "string" ? settings.exceptions : ""
   if (raw !== cachedExceptionString) {
     cachedExceptionString = raw
@@ -949,10 +949,10 @@ function matchesException(settings: any, ...texts: string[]): boolean {
     cachedExceptionRegex =
       arr.length > 0 ? new RegExp(arr.map(escapeRegex).join("|"), "i") : null
   }
-  return (
-    cachedExceptionRegex !== null &&
-    texts.some((t) => cachedExceptionRegex!.test(t))
-  )
+  if (cachedExceptionRegex === null) return false
+  if (cachedExceptionRegex.test(text1)) return true
+  if (text2 !== undefined && cachedExceptionRegex.test(text2)) return true
+  return false
 }
 
 function extractChannelName(el: HTMLElement): string {

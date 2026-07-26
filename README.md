@@ -1,6 +1,6 @@
 # Neoblocker
 
-I built Neoblocker because static blocklists cannot keep up with the modern web. Managing hardcoded lists of bad domains is a losing battle against dynamic content. Instead of playing whack-a-mole with URLs, we filter based on real-time content analysis.
+I built Neoblocker because static blocklists can't keep up with the modern web. Managing hardcoded lists of bad domains is a losing battle against dynamic content. Instead of playing whack-a-mole with URLs, we filter based on real-time content analysis.
 
 Neoblocker is an offline content firewall that runs directly inside your browser. I use WebAssembly to run local machine learning models that analyze page text on the fly. It intercepts the DOM and filters unwanted content before the browser renders it.
 
@@ -8,11 +8,11 @@ Neoblocker is an offline content firewall that runs directly inside your browser
 
 - **Local Inference:** I designed this to run completely offline. We make zero external API calls for text analysis, so your browsing data never leaves your machine.
 - **Shadow DOM Isolation:** Dropping a custom UI into arbitrary web pages is a nightmare for CSS collisions. We handle this by injecting the extension's UI into a Shadow DOM using React's `createPortal`.
-- **Dynamic CSS Scoping:** You cannot trust a host page's styles. To keep styling consistent without bleeding CSS onto the host, we intercept and transform Tailwind CSS during the build. We replace `:root` selectors with `:host(plasmo-csui)` and convert `rem` units into strict `px` values mapped to a 16px baseline.
+- **Dynamic CSS Scoping:** You can't trust a host page's styles. To keep styling consistent without bleeding CSS onto the host, we intercept and transform Tailwind CSS during the build. We replace `:root` selectors with `:host(plasmo-csui)` and convert `rem` units into strict `px` values mapped to a 16px baseline.
 
 ## Tech Stack & Rationale
 
-I chose these tools to move fast while ensuring the injected components stay strictly isolated from chaotic host stylesheets.
+I chose these tools to move fast while keeping the injected components strictly isolated from chaotic host stylesheets.
 
 - **Plasmo:** Writing Manifest V3 extensions requires a lot of boilerplate. I use Plasmo as the build system because it abstracts away configuration and provides reliable hot-reloading.
 - **React:** Managing UI lifecycles inside a Shadow DOM gets messy quickly. React handles state and rendering logic, keeping the component tree predictable.

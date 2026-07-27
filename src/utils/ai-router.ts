@@ -315,7 +315,6 @@ export async function analyzeContent(
   try {
     const cleanText = normalizeText(text)
     if (cleanText.length < 12) return { action: "SAFE" }
-    const lowerText = cleanText.toLowerCase()
 
     // User-configured exceptions check (e.g. mrbeast, ludwig, jojo)
     const rawExceptions =
@@ -327,14 +326,19 @@ export async function analyzeContent(
         .map((kw) => kw.trim().toLowerCase())
         .filter((kw) => kw.length > 0)
       cachedExceptionRegex =
-        arr.length > 0 ? new RegExp(arr.map((kw) => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")).join("|"), "i") : null
+        arr.length > 0
+          ? new RegExp(
+              arr
+                .map((kw) => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"))
+                .join("|"),
+              "i"
+            )
+          : null
     }
 
     if (cachedExceptionRegex !== null) {
-      if (cachedExceptionRegex.test(lowerText)) {
-        console.log(
-          `[Neoblocker] Exception matched. Bypassing analysis.`
-        )
+      if (cachedExceptionRegex.test(cleanText)) {
+        console.log(`[Neoblocker] Exception matched. Bypassing analysis.`)
         return { action: "SAFE" }
       }
     }
@@ -371,7 +375,7 @@ export async function analyzeContent(
     const sexual_explicit = toxScores["sexual_explicit"] || 0
 
     // Elevate identity attack score for explicit hate speech/extremist keywords (e.g. kkk, white supremacist, grand wizard, racist)
-    const hasHateKeyword = HATE_REGEX.test(lowerText)
+    const hasHateKeyword = HATE_REGEX.test(cleanText)
     if (hasHateKeyword && settings.enableToxicity) {
       console.log(
         "[Neoblocker] Hate/racism topic keyword detected. Elevating identity_attack score to 0.85."

@@ -62,3 +62,7 @@
 ## 2024-07-26 - Eliminate Rest Parameters and Array Methods in Hot Paths
 **Learning:** Using rest parameters (e.g. `...texts: string[]`) and array methods like `.some(t => regex.test(t))` inside high-frequency execution paths (such as `MutationObserver` callbacks) causes continuous allocation of new arrays and closure functions. This creates massive garbage collection (GC) thrashing and slows down the main thread, especially on pages with rapid DOM mutations like YouTube.
 **Action:** When a function in a hot path only expects a fixed small number of arguments (e.g. 1 or 2 strings), use explicit optional parameters (`text1: string, text2?: string`) and simple `if` checks instead of rest parameters and array methods.
+
+## 2024-07-27 - Remove redundant allocations for case-insensitive Regex
+**Learning:** Calling `.toLowerCase()` on large strings simply to pass them into a regex test (`regex.test(lowerText)`) creates massive, redundant string allocations in memory, provided the regex was already compiled with the case-insensitive `"i"` flag.
+**Action:** When evaluating untrusted text against case-insensitive regex patterns, pass the raw text directly into `.test()` to prevent blocking the main thread and thrashing the garbage collector.

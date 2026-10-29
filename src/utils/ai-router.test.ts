@@ -1,145 +1,166 @@
-import { pipeline } from "@xenova/transformers"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { analyzeContent, NanoClassifier } from "./ai-router"
+import { analyzeContent, applyModelSettings } from "./ai-router"
+import { DEFAULT_SETTINGS } from "./storage"
+import type { ExtensionSettings } from "./storage"
+
+const modelState = vi.hoisted(() => ({
+  scores: {
+    toxicity: 0.1,
+    severe_toxicity: 0.05,
+    obscene: 0.05,
+    threat: 0.05,
+    insult: 0.05,
+    identity_attack: 0.05,
+    sexual_explicit: 0.05
+  } as Record<string, number>,
+  bias: 0.9,
+  throwError: false,
+  calls: [] as string[]
+}))
 
 vi.mock("@xenova/transformers", () => {
-  const mockPipeline = vi.fn().mockImplementation((task, model) => {
-    const classifier = vi.fn().mockImplementation((text, options) => {
-      if (model.includes("bias")) {
-        return Promise.resolve([{ label: "BIASED", score: 0.9 }])
-      } else {
-        return Promise.resolve([
-          { label: "toxicity", score: 0.1 },
-          { label: "severe_toxicity", score: 0.05 },
-          { label: "obscene", score: 0.05 },
-          { label: "threat", score: 0.05 },
-          { label: "insult", score: 0.05 },
-          { label: "identity_attack", score: 0.05 },
-          { label: "sexual_explicit", score: 0.05 }
-        ])
+  const pipeline = vi.fn(async (_task: string, model: string) => {
+    modelState.calls.push(model)
+    if (modelState.throwError) throw new Error("model load failed")
+
+    return async (_text: string) => {
+      // "unbiased-toxic-roberta" also contains the substring "bias", so match
+      // the exact bias model id instead.
+      if (model === "protectai/distilroberta-bias-onnx") {
+        return [{ label: "BIASED", score: modelState.bias }]
       }
-    })
-    return Promise.resolve(classifier)
+      return Object.entries(modelState.scores).map(([label, score]) => ({
+        label,
+        score
+      }))
+    }
   })
 
   return {
-    pipeline: mockPipeline,
+    pipeline,
     env: {
       allowLocalModels: false,
       backends: {
         onnx: {
-          wasm: {
-            numThreads: 1,
-            proxy: false,
-            wasmPaths: ""
-          }
+          wasm: { numThreads: 1, proxy: false, wasmPaths: "" }
         }
       }
     }
   }
 })
 
-describe("NanoClassifier", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    vi.spyOn(console, "error").mockImplementation(() => {})
-  })
-
-  it("should analyze text successfully", async () => {
-    const mockSession = {
-      prompt: vi.fn().mockResolvedValue("  block  ")
-    }
-    vi.spyOn(NanoClassifier, "getSession").mockResolvedValue(mockSession as any)
-
-    const result = await NanoClassifier.analyze("some bad text")
-    expect(result).toBe("BLOCK")
-    expect(NanoClassifier.getSession).toHaveBeenCalled()
-    expect(mockSession.prompt).toHaveBeenCalledWith("some bad text")
-  })
-
-  it("should return SAFE when getSession throws an error", async () => {
-    const error = new Error("Failed to create session")
-    vi.spyOn(NanoClassifier, "getSession").mockRejectedValue(error)
-
-    const result = await NanoClassifier.analyze("some text")
-    expect(result).toBe("SAFE")
-    expect(console.error).toHaveBeenCalledWith("NanoClassifier error:", error)
-  })
-
-  it("should return SAFE when session.prompt throws an error", async () => {
-    const error = new Error("Prompt failed")
-    const mockSession = {
-      prompt: vi.fn().mockRejectedValue(error)
-    }
-    vi.spyOn(NanoClassifier, "getSession").mockResolvedValue(mockSession as any)
-
-    const result = await NanoClassifier.analyze("some text")
-    expect(result).toBe("SAFE")
-    expect(console.error).toHaveBeenCalledWith("NanoClassifier error:", error)
-  })
+const settings = (overrides: Partial<ExtensionSettings> = {}) => ({
+  ...DEFAULT_SETTINGS,
+  ...overrides
 })
 
-describe("analyzeContent safe-context check", () => {
+function unloadModels() {
+  applyModelSettings(settings({ enableToxicity: false, enableBias: false }))
+}
+
+describe("analyzeContent", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    modelState.throwError = false
+    modelState.bias = 0.9
+    modelState.calls = []
+    modelState.scores = {
+      toxicity: 0.1,
+      severe_toxicity: 0.05,
+      obscene: 0.05,
+      threat: 0.05,
+      insult: 0.05,
+      identity_attack: 0.05,
+      sexual_explicit: 0.05
+    }
+    unloadModels()
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.spyOn(console, "warn").mockImplementation(() => {})
   })
 
-  it("should skip bias analysis when a safe context keyword is present as a whole word", async () => {
-    const settings = {
-      exceptions: "",
-      enableToxicity: true,
-      enableBias: true,
-      enableObscene: true,
-      toxicityThreshold: 0.5,
-      racismThreshold: 0.5,
-      biasThreshold: 0.5,
-      theme: "dark" as "dark",
-      filterMode: "blur" as "blur",
-      bannedKeywords: ""
-    }
+  it("does no work when the master switch is off", async () => {
+    const result = await analyzeContent(
+      "This is a horribly toxic threat with explicit content",
+      settings({ enabled: false })
+    )
 
-    // "tutorial" is a safe keyword.
-    // If it works, the bias classifier should not be invoked.
+    expect(result).toEqual({ action: "SAFE" })
+    expect(modelState.calls).toHaveLength(0)
+  })
+
+  it("skips bias analysis when a safe-context keyword is a whole word", async () => {
     const result = await analyzeContent(
       "This is a video tutorial on coding",
-      settings,
+      settings(),
       false
     )
+
     expect(result.action).toBe("SAFE")
-
-    const toxicityModelCalled = (pipeline as any).mock.calls.some(
-      (call: any) => call[1] === "protectai/unbiased-toxic-roberta-onnx"
+    expect(modelState.calls).toContain(
+      "protectai/unbiased-toxic-roberta-onnx"
     )
-    const biasModelCalled = (pipeline as any).mock.calls.some(
-      (call: any) => call[1] === "protectai/distilroberta-bias-onnx"
+    expect(modelState.calls).not.toContain(
+      "protectai/distilroberta-bias-onnx"
     )
-
-    expect(toxicityModelCalled).toBe(true)
-    expect(biasModelCalled).toBe(false)
   })
 
-  it("should NOT skip bias analysis when a safe context keyword is part of a larger word (e.g. mismatch)", async () => {
-    const settings = {
-      exceptions: "",
-      enableToxicity: true,
-      enableBias: true,
-      enableObscene: true,
-      toxicityThreshold: 0.5,
-      racismThreshold: 0.5,
-      biasThreshold: 0.5,
-      theme: "dark" as "dark",
-      filterMode: "blur" as "blur",
-      bannedKeywords: ""
-    }
+  it("still runs bias analysis when a safe keyword is only part of a word", async () => {
+    modelState.bias = 0.95
+    modelState.scores.toxicity = 0.7
 
-    // "mismatch" contains "match" (a safe keyword), but "mismatch" itself is not safe.
-    // So the bias classifier SHOULD be invoked.
-    await analyzeContent("There is a mismatch in the results", settings, false)
+    await analyzeContent("There is a mismatch in the results", settings(), false)
 
-    const biasModelCalled = (pipeline as any).mock.calls.some(
-      (call: any) => call[1] === "protectai/distilroberta-bias-onnx"
+    expect(modelState.calls).toContain("protectai/distilroberta-bias-onnx")
+  })
+
+  it("blocks a threatening title in the fast title pass", async () => {
+    modelState.scores.threat = 0.91
+
+    const result = await analyzeContent(
+      "I will find you and hurt you tonight",
+      settings(),
+      true
     )
-    expect(biasModelCalled).toBe(true)
+
+    expect(result.action).toBe("LOCAL_BLOCK")
+    expect(result.reason).toContain("Threats")
+  })
+
+  it("blocks strongly toxic deep-scan text using the weighted score", async () => {
+    modelState.scores.toxicity = 0.8
+    modelState.scores.insult = 0.5
+    modelState.scores.severe_toxicity = 0.3
+
+    const result = await analyzeContent(
+      "You are a worthless piece of trash and everyone hates you",
+      settings(),
+      false
+    )
+
+    expect(result.action).toBe("LOCAL_BLOCK")
+    expect(result.reason).toContain("Toxic")
+  })
+
+  it("returns an error instead of SAFE when a model cannot load", async () => {
+    modelState.throwError = true
+
+    const result = await analyzeContent(
+      "A sentence long enough to reach the classifier safely",
+      settings(),
+      true
+    )
+
+    expect(result.action).toBe("SAFE")
+    expect(result.error).toBe("Model unavailable")
+  })
+
+  it("respects the exception list before running models", async () => {
+    const result = await analyzeContent(
+      "This is a video tutorial on coding",
+      settings({ exceptions: "coding" })
+    )
+
+    expect(result.action).toBe("SAFE")
+    expect(modelState.calls).toHaveLength(0)
   })
 })

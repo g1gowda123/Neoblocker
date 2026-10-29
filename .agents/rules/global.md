@@ -2,14 +2,32 @@
 trigger: manual
 ---
 
-￼# Project: Cognitive Defense Firewall
-You are an expert full-stack engineer. We are building a Manifest V3 browser extension using the Plasmo framework, React, and Tailwind CSS. 
+# Project: Neoblocker
 
-## Fully Offline AI Architecture
-The extension operates entirely offline to protect user privacy. It performs multi-layered text classification directly in the browser using WebAssembly (WASM):
-1. **Toxicity Classifier**: Uses `protectai/unbiased-toxic-roberta-onnx` (Transformers.js running on CPU WASM) to detect toxicity, severe toxicity, obscenity, threats, insults, and identity attack/hate speech.
-2. **Bias & Clickbait Classifier**: Uses `protectai/distilroberta-bias-onnx` to scan for political/media bias and opinionated slant.
-3. **Safe Context & Keyword Rules**: Uses a safe-context allowlist (gaming, educational, and historical keywords) to mitigate false positives, along with user-configurable exception keywords and elevated keyword detection for explicit hate speech.
+Neoblocker is a Manifest V3 browser extension built with Plasmo. React is used only for the popup (`src/popup.tsx`); the YouTube content script is plain TypeScript and the popup styles are hand-written CSS. Do not reintroduce Tailwind or a React content-script component.
 
-## UI Strategy
-Use Tailwind CSS to inject a React component that applies `filter: blur(15px)` over flagged DOM elements, replacing them with a custom warning overlay.
+## Local AI architecture
+
+Inference runs on-device with Transformers.js and WebAssembly:
+
+1. **Toxicity classifier** — `protectai/unbiased-toxic-roberta-onnx` detects toxicity, severe toxicity, obscenity, threats, insults, identity attacks, and explicit content.
+2. **Bias classifier** — `protectai/distilroberta-bias-onnx` provides a supporting bias/rage-bait signal. It is not a standalone political-opinion filter.
+3. **Rules** — user keyword lists and exceptions are checked before ML; a safe-context buffer reduces false positives.
+
+Model weights are **downloaded once from Hugging Face and cached by the browser**. Do not claim the extension is fully offline on first use. After weights are cached, inference works offline. No inference API or telemetry is permitted.
+
+## Boundaries
+
+- `src/contents/content-observer.ts` observes the YouTube DOM, extracts titles/channels/comments, applies overlays, and persists per-tab reveal choices in `sessionStorage`.
+- `src/background.ts` owns message validation, the network boundary, model execution, caches, stats, and the toolbar badge.
+- `src/utils/ai-router.ts` serializes inference and owns decision gates. Keep thresholds tested.
+- `src/utils/storage.ts` serializes writes and sanitizes settings/stats.
+
+## Security and privacy rules
+
+- Treat content-script messages as untrusted: validate action names, video IDs, lengths, and InnerTube parameters; never return raw exception details.
+- Validate URLs extracted from YouTube HTML before fetching. Only HTTPS YouTube/googlevideo hosts are allowed for subtitles.
+- Every network request needs a timeout and an output-size bound.
+- Keep host permissions limited to YouTube and model-download hosts. No analytics, remote code, cookies, tabs, or history permissions.
+- Do not inject Tailwind/preflight or other global CSS into the host page; use the scoped overlay stylesheet.
+- Add tests for parsing, validation, storage, and detection-gate changes. Run `npm run check` and `npm run build` before shipping.

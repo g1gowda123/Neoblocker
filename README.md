@@ -1,47 +1,239 @@
-# Neoblocker
+<p align="center">
+  <img src="assets/icon.png" width="104" height="104" alt="Neoblocker shield icon">
+</p>
 
-I built Neoblocker because static blocklists can't keep up with the modern web. Managing hardcoded lists of bad domains is a losing battle against dynamic content. Instead of playing whack-a-mole with URLs, we filter based on real-time content analysis.
+<h1 align="center">Neoblocker</h1>
 
-Neoblocker is an offline content firewall that runs directly inside your browser. I use WebAssembly to run local machine learning models that analyze page text on the fly. It intercepts the DOM and filters unwanted content before the browser renders it.
+<p align="center">
+  <strong>On-device AI content filtering for YouTube.</strong><br>
+  Blur or hide toxic, hateful, and rage-bait content before you have to read it.
+</p>
 
-## Key Features
+<p align="center">
+  <a href="https://github.com/g1gowda123/Neoblocker/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/g1gowda123/Neoblocker/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/g1gowda123/Neoblocker/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/g1gowda123/Neoblocker"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/g1gowda123/Neoblocker"></a>
+</p>
 
-- **Local Inference:** I designed this to run completely offline. We make zero external API calls for text analysis, so your browsing data never leaves your machine.
-- **Shadow DOM Isolation:** Dropping a custom UI into arbitrary web pages is a nightmare for CSS collisions. We handle this by injecting the extension's UI into a Shadow DOM using React's `createPortal`.
-- **Dynamic CSS Scoping:** You can't trust a host page's styles. To keep styling consistent without bleeding CSS onto the host, we intercept and transform Tailwind CSS during the build. We replace `:root` selectors with `:host(plasmo-csui)` and convert `rem` units into strict `px` values mapped to a 16px baseline.
+---
 
-## Tech Stack & Rationale
+Neoblocker is a Manifest V3 browser extension that runs small text classifiers **inside your browser**. It watches YouTube cards and comments, sends text to a local model, and replaces flagged items with a quiet "Filtered by Neoblocker" overlay. There is no account, no analytics, and no inference API.
 
-I chose these tools to move fast while keeping the injected components strictly isolated from chaotic host stylesheets.
+The first time a model is used, its weights are downloaded from Hugging Face and cached by the browser. After that, classification is local and works offline.
 
-- **Plasmo:** Writing Manifest V3 extensions requires a lot of boilerplate. I use Plasmo as the build system because it abstracts away configuration and provides reliable hot-reloading.
-- **React:** Managing UI lifecycles inside a Shadow DOM gets messy quickly. React handles state and rendering logic, keeping the component tree predictable.
-- **TailwindCSS:** Tailwind lets me iterate on the UI rapidly. By processing the CSS during the build, we keep the speed of utility classes but structurally prevent layout leaks.
-- **@xenova/transformers:** The core classification engine. It runs machine learning models via WebAssembly directly in the browser for fast, private, offline filtering without a remote server.
+> **Privacy in one sentence:** the models run on your device; your browsing text is never uploaded to a server.
 
-## Setup & Usage
+## Screenshots
 
-To build and run the project locally:
+<p align="center">
+  <img src="docs/popup.png" width="360" alt="Neoblocker popup with protection, detection, scanning and model settings">
+</p>
 
-1. Install dependencies:
+<p align="center">
+  <img src="docs/filtered-cards.png" width="720" alt="YouTube search results with a video blurred by Neoblocker and a Show anyway button">
+</p>
+
+## Features
+
+- **Two local models** — toxicity/hate speech and bias/rage-bait classification using Transformers.js and WebAssembly.
+- **Fast title pass** — scans video titles as cards render, without waiting for a full page load.
+- **Optional deep scan** — checks subtitles and comments for visible videos, capped at two concurrent requests.
+- **Your call on every block** — **Show anyway** reveals a single item for the tab session; **Allow channel** adds the channel to your exceptions.
+- **Blur or hide** — blur with a reason, or remove flagged items from the page entirely.
+- **Keyword rules** — always-block and never-block lists, matched against titles, channels, and comments.
+- **Useful controls** — master pause switch, threshold sliders, per-model status, one-click model preload, daily filtered counter, and a badge on the toolbar icon.
+- **Private by design** — settings and counts live in `chrome.storage.local`; the only network requests are to YouTube (page/subtitles/comments) and Hugging Face (model weights).
+- **Accessible popup** — keyboard-friendly switches, labelled controls, light/dark themes, and a scrollable 360 px layout.
+
+## Install
+
+### From a release (recommended)
+
+1. Download the latest `neoblocker-v*-chrome.zip` from [Releases](https://github.com/g1gowda123/Neoblocker/releases).
+2. Unzip it into a permanent folder.
+3. Open `chrome://extensions` (or `edge://extensions`) and enable **Developer mode**.
+4. Click **Load unpacked** and select the unzipped folder.
+5. Open YouTube. The shield badge appears in the toolbar; click it to configure filtering.
+
+Chrome and Edge 102+ are supported. Firefox is not currently a supported target.
+
+### From source
+
 ```bash
-npm install
-```
-
-2. Start the development server:
-```bash
+npm ci
 npm run dev
 ```
 
-Once the development server is running, load the unpacked extension into Chrome:
-- Open Chrome and navigate to `chrome://extensions/`.
-- Toggle **Developer mode** on in the top right corner.
-- Click **Load unpacked**.
-- Select the `build/chrome-mv3-dev` directory generated by the build process.
+Load `build/chrome-mv3-dev` as an unpacked extension. Plasmo rebuilds the extension when files change.
 
-To create an optimized production build, run:
+For a production build and zip:
+
 ```bash
+npm run build
+npm run package
+```
+
+The unpacked build is in `build/chrome-mv3-prod`; the distributable zip is `build/chrome-mv3-prod.zip`.
+
+## First run: models
+
+Neoblocker ships without model weights so the extension stays small. On first use it downloads:
+
+| Model | Purpose | Approx. size |
+| --- | --- | ---: |
+| `protectai/unbiased-toxic-roberta-onnx` | Toxicity, threats, insults, identity attacks, explicit content | ~120 MB |
+| `protectai/distilroberta-bias-onnx` | Bias and sensational/rage-bait framing | ~83 MB |
+
+The popup shows download progress and a **Preload** button. Weights are cached by the browser, so this is normally a one-time cost. If a download fails, check your connection and press **Preload** again.
+
+Deep scan is the only feature that fetches extra YouTube data (the watch page, subtitles, and a sample of comments). Title and comment scanning on the page itself works without those requests.
+
+## How it works
+
+```text
+┌──────────────────────────────┐
+│ YouTube page                 │
+│  content-observer.ts         │
+│  · watches cards/comments    │
+│  · fast title + comment pass │
+│  · visible-card deep scan    │
+│  · blur/hide + overlay       │
+└──────────────┬───────────────┘
+               │ chrome.runtime messages
+┌──────────────▼───────────────┐
+│ background service worker    │
+│  · message validation        │
+│  · serialized ML inference   │
+│  · TTL/LRU result caches     │
+│  · YouTube fetch + sampling  │
+│  · badge + daily stats       │
+└──────────────┬───────────────┘
+               │ Transformers.js / WASM
+        ┌──────▼──────┐
+        │ local model │
+        └─────────────┘
+```
+
+- `src/contents/content-observer.ts` is a plain content script (no React, no host-page CSS framework). It injects a small stylesheet for the blur and overlay, observes DOM changes, and processes visible items.
+- `src/background.ts` owns model execution and the network boundary. Messages are schema-checked and bounded; subtitle URLs and InnerTube parameters are validated before use; all fetches have timeouts.
+- `src/utils/ai-router.ts` serializes inference, caches 400 recent results per model, samples long text (start/middle/end), and exposes model status/progress to the popup.
+- `src/utils/storage.ts` sanitizes stored settings, serializes writes, and maintains the daily counter.
+- `src/popup.tsx` and `src/style.css` implement the settings UI.
+
+### Detection pipeline
+
+1. **Exceptions** are checked first; matching text is always allowed.
+2. **Banned keywords** are checked next; matching cards/comments are always blocked.
+3. **Titles** get a fast toxicity pass with stricter gates for explicit content, threats, hate speech, and severe insults.
+4. **Comments and deep scans** use the full gate set, including a positivity/context buffer so documentaries and educational discussions are not blocked for merely mentioning a sensitive topic.
+5. **Bias** is only used as a supporting signal alongside toxic tone, which keeps rage-bait detection from turning into a generic opinion filter.
+
+Thresholds are clamped to 5–95% and interpreted as **minimum confidence to block**. Lower values are stricter.
+
+## Configuration
+
+| Setting | What it does |
+| --- | --- |
+| **Protection** | Master switch. Pausing restores every filtered item on the current page. |
+| **Toxicity & hate speech** | Enables the toxicity model and the title/comment gates. |
+| **Toxicity threshold** | Overall confidence needed to block; lower flags more. |
+| **Hate speech threshold** | Separate threshold for identity attacks and extremist language. |
+| **Abusive profanity** | Extra obscene-insult check. |
+| **Rage-bait & bias** | Enables the bias model; only blocks biased text with toxic signals. |
+| **Bias threshold** | Confidence threshold for the bias/rage-bait signal. |
+| **Deep scan** | Fetches subtitles and sampled comments for visible videos. Turn off for maximum performance. |
+| **Filter mode** | **Blur with reason** or **Hide completely**. |
+| **Always block / Never block** | Comma-separated keyword lists. Matching is case-insensitive substring matching. |
+| **Restore hidden items** | Reveals everything currently filtered on the active YouTube tab for this session. |
+| **Preload** | Downloads and warms the enabled models. |
+| **Clear counter / Reset all settings** | Resets today's count or all settings to defaults. |
+
+### Keyboard and accessibility
+
+The popup uses native buttons, labelled sliders, and `role="switch"` controls. All controls can be reached with Tab and operated with Enter/Space/arrow keys. The theme follows the in-popup toggle rather than the OS setting, so it stays consistent.
+
+## Development
+
+Requirements: Node.js 20+ and npm.
+
+```bash
+npm ci          # install exact dependencies
+npm run dev     # Plasmo dev build + watcher
+npm run build   # production Chrome MV3 build
+npm run package # zip build/chrome-mv3-prod
+npm test        # Vitest unit tests
+npm run typecheck
+npm run check   # typecheck + tests
+```
+
+The test suite covers HTML/URL extraction and validation, keyword parsing, settings sanitization/storage serialization, stats, and model decision thresholds. It runs in Node with a small `chrome` API mock; no browser is required.
+
+### Project layout
+
+```text
+src/
+  background.ts                 service worker: messages, fetch boundary, stats/badge
+  contents/content-observer.ts  YouTube DOM observer, overlays, reveal state
+  popup.tsx                     settings UI
+  style.css                     self-contained popup styles
+  utils/
+    ai-router.ts                model loading, inference queue, decision gates
+    extract.ts                  HTML/YouTube parsing and validation helpers
+    keywords.ts                 keyword list parsing and regex cache
+    storage.ts                  settings, stats, serialized storage writes
+assets/
+  icon.svg / icon.png           source and 512 px store icon
+docs/                           README screenshots
+```
+
+### Adding a rule or threshold
+
+Detection gates live in `analyzeContent()` in `src/utils/ai-router.ts`. Add a unit test in `src/utils/ai-router.test.ts` for a block and a safe case, then run `npm run check`. Pure parsing/validation helpers belong in `src/utils/extract.ts` and should be tested in `src/utils/extract.test.ts`.
+
+## Privacy and permissions
+
+Neoblocker requests only:
+
+- `storage` — save settings and the local daily counter.
+- `https://youtube.com/*` and `https://*.youtube.com/*` — run the content script and fetch watch pages/subtitles/comments for deep scan.
+- `https://huggingface.co/*`, `https://*.huggingface.co/*`, `https://*.hf.co/*` — download model weights once.
+
+There is no `tabs`, `history`, `cookies`, or `<all_urls>` permission. The extension does not read or transmit pages other than YouTube, does not use cookies or credentials for its fetches, and does not include analytics or remote code. Reveal choices are stored in `sessionStorage` for the current tab session; settings and the daily count are stored in `chrome.storage.local`.
+
+## Limitations
+
+- The bundled classifiers are trained primarily on English text. Other languages may be under-filtered.
+- This is a heuristic content filter, not a parental-control or security boundary. Do not rely on it as the only safeguard for a child or a shared device.
+- YouTube changes its DOM regularly. If cards stop being recognized, open an issue with the browser version and a screenshot.
+- Deep scan fetches public video text from YouTube; it adds latency and network usage. It is limited to visible cards and two concurrent requests.
+- The first model load can take a while on slow connections. The UI reports progress and allows retries.
+
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| Nothing is filtered | Check that **Protection** is on and the page was reloaded after installing. Open the popup on a YouTube tab. |
+| "Model unavailable" / model error | Check your connection, press **Preload**, and retry. Corporate proxies may block `huggingface.co` or `*.hf.co`. |
+| Deep scan never finishes | Turn off deep scan or try a shorter video. Subtitle/comment availability varies by video. |
+| Popup says "Open a YouTube tab first" | The restore action needs an active YouTube tab running the content script. Reload that tab after updating the extension. |
+| Stale UI after an update | Reload the extension in `chrome://extensions`, then reload YouTube. |
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR:
+
+```bash
+npm ci
+npm run check
 npm run build
 ```
 
-This generates the final bundled extension, ready to zip and publish.
+Keep changes focused, add tests for parsing/decision logic, and do not add remote inference or broad host permissions. Security-sensitive changes should preserve the existing validation and timeout boundaries.
+
+## License
+
+[MIT](LICENSE) © 2026 Neoblocker
+
+---
+
+If Neoblocker makes YouTube calmer for you, consider starring the repo. It helps other people find it.

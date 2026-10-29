@@ -1,118 +1,173 @@
 import { env, pipeline } from "@xenova/transformers"
 
+import { sampleText } from "./extract"
+import { matchesAnyKeyword } from "./keywords"
 import type { ExtensionSettings } from "./storage"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Configure Transformers.js for MV3 Service Worker:
-//   - Disable remote model fetching for WASM binaries (use locally bundled files)
-//   - Single-threaded: MV3 service workers do not support SharedArrayBuffer
-//   - Proxy disabled: no Worker nesting in service workers
+// Configure Transformers.js for an MV3 service worker:
+//   - WASM binaries are bundled locally; model weights are fetched once from
+//     Hugging Face and cached by the browser (text never leaves the device).
+//   - Single-threaded: MV3 workers do not have SharedArrayBuffer.
+//   - No worker proxy: nesting workers inside a service worker is unsupported.
 // ─────────────────────────────────────────────────────────────────────────────
 env.allowLocalModels = false
 env.backends.onnx.wasm.numThreads = 1
 env.backends.onnx.wasm.proxy = false
-if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
   env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Model status broadcasting — lets the popup know if models are loading
+// Model status broadcasting — lets the popup show download progress/errors.
 // ─────────────────────────────────────────────────────────────────────────────
 export type ModelStatus = "idle" | "loading" | "loaded" | "error"
 
 export interface ModelStatuses {
   toxicity: ModelStatus
   bias: ModelStatus
+  /** Download progress 0..1, or 0 when nothing has been reported yet. */
+  progress: {
+    toxicity: number
+    bias: number
+  }
 }
 
-let modelStatuses: ModelStatuses = {
+const modelStatuses: ModelStatuses = {
   toxicity: "idle",
-  bias: "idle"
+  bias: "idle",
+  progress: { toxicity: 0, bias: 0 }
 }
 
-function broadcastStatus() {
+let lastBroadcast = 0
+
+function broadcastStatus(force = false) {
+  if (
+    typeof chrome === "undefined" ||
+    !chrome.runtime?.sendMessage ||
+    (!force && Date.now() - lastBroadcast < 450)
+  ) {
+    return
+  }
+  lastBroadcast = Date.now()
   chrome.runtime
-    .sendMessage({ action: "modelStatus", statuses: modelStatuses })
+    .sendMessage({ action: "modelStatus", statuses: getModelStatuses() })
     .catch(() => {
-      // Popup may not be open — silently ignore
+      // The popup is usually closed — this is a best-effort notification.
     })
+}
+
+export function getModelStatuses(): ModelStatuses {
+  return {
+    toxicity: modelStatuses.toxicity,
+    bias: modelStatuses.bias,
+    progress: { ...modelStatuses.progress }
+  }
+}
+
+function setStatus(model: "toxicity" | "bias", status: ModelStatus) {
+  modelStatuses[model] = status
+  if (status !== "loading") modelStatuses.progress[model] = 0
+  broadcastStatus(true)
+}
+
+function setProgress(model: "toxicity" | "bias", value: number) {
+  const progress = Math.min(1, Math.max(0, value))
+  modelStatuses.progress[model] = progress
+  broadcastStatus()
+}
+
+const progressCallback =
+  (model: "toxicity" | "bias") =>
+  (event: { status?: string; progress?: number }) => {
+    if (event?.status === "progress" && typeof event.progress === "number") {
+      setProgress(model, event.progress / 100)
+    }
+  }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inference is serialised. ONNX runs single-threaded in a service worker, so
+// feeding it parallel classifier calls only spikes memory and delays the queue.
+// ─────────────────────────────────────────────────────────────────────────────
+class SerialQueue {
+  private tail: Promise<unknown> = Promise.resolve()
+
+  run<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(task, task)
+    this.tail = result.catch(() => undefined)
+    return result
+  }
+}
+
+const inferenceQueue = new SerialQueue()
+
+function lruGet<K, V>(map: Map<K, V>, key: K): V | undefined {
+  if (!map.has(key)) return undefined
+  const value = map.get(key) as V
+  map.delete(key)
+  map.set(key, value)
+  return value
+}
+
+function lruSet<K, V>(map: Map<K, V>, key: K, value: V, max: number) {
+  if (map.size >= max) {
+    const oldest = map.keys().next().value
+    if (oldest !== undefined) map.delete(oldest)
+  }
+  map.set(key, value)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier 1: Toxicity Classifier
 //   Model: protectai/unbiased-toxic-roberta-onnx
-//   Labels: toxic, severe_toxic, obscene, threat, insult, identity_hate
-//   This model is trained to mitigate unintended bias (Jigsaw dataset).
-//   It will NOT flag harmless sentences containing identity terms.
+//   Labels: toxicity, severe_toxicity, obscene, threat, insult,
+//           identity_attack, sexual_explicit
+//   The model is trained to avoid flagging harmless identity mentions.
 // ─────────────────────────────────────────────────────────────────────────────
 const TOXICITY_MODEL = "protectai/unbiased-toxic-roberta-onnx"
-const TOXICITY_THRESHOLD = 0.5
-
-const TOXICITY_REASON_MAP: Record<string, string> = {
-  severe_toxicity: "Severely Harmful Content",
-  threat: "Threats & Violence",
-  identity_attack: "Hate Speech",
-  insult: "Harassment & Insults",
-  obscene: "Obscene Language",
-  toxicity: "Toxic Content",
-  sexual_explicit: "Explicit Content"
-}
-
-export class NanoClassifier {
-  static sessionPromise: Promise<any> | null = null
-
-  static getSession() {
-    if (this.sessionPromise) return this.sessionPromise
-
-    this.sessionPromise = (self as any).ai.createTextSession()
-    return this.sessionPromise
-  }
-
-  static async analyze(text: string) {
-    try {
-      const session = await this.getSession()
-      const response = await session.prompt(text)
-      return response.trim().toUpperCase()
-    } catch (error) {
-      console.error("NanoClassifier error:", error)
-      return "SAFE"
-    }
-  }
-}
+const HATE_KEYWORDS = [
+  "kkk",
+  "white supremacist",
+  "grand wizard",
+  "neo-nazi",
+  "racist",
+  "racism"
+]
+const HATE_REGEX = new RegExp(
+  `(${HATE_KEYWORDS.map((word) =>
+    word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  ).join("|")})`,
+  "i"
+)
 
 class ToxicityClassifier {
-  // Bolt Optimization: Cache the Promise rather than the resolved object to prevent race conditions
-  // where multiple concurrent requests for the same text trigger redundant, parallel pipeline executions.
   private static cache = new Map<string, Promise<Record<string, number>>>()
   private static initializationPromise: Promise<any> | null = null
 
-  static getInstance() {
+  static getInstance(): Promise<any> {
     if (this.initializationPromise) return this.initializationPromise
 
-    // Prevent race conditions during concurrent accesses by caching the promise
-    console.log("[Neoblocker] Loading Toxicity model on CPU (WASM)...")
-    modelStatuses.toxicity = "loading"
-    broadcastStatus()
+    console.log("[Neoblocker] Loading toxicity model (WASM)…")
+    setStatus("toxicity", "loading")
 
     this.initializationPromise = pipeline(
       "text-classification",
       TOXICITY_MODEL,
       {
-        model_file_name: "../model"
+        model_file_name: "../model",
+        progress_callback: progressCallback("toxicity")
       }
     )
       .then((pipe) => {
-        console.log("[Neoblocker] Toxicity model loaded.")
-        modelStatuses.toxicity = "loaded"
-        broadcastStatus()
+        console.log("[Neoblocker] Toxicity model ready.")
+        setStatus("toxicity", "loaded")
         return pipe as any
       })
-      .catch((err) => {
-        console.error("[Neoblocker] Failed to load Toxicity model:", err)
-        modelStatuses.toxicity = "error"
-        broadcastStatus()
+      .catch((error) => {
+        console.error("[Neoblocker] Toxicity model failed to load:", error)
+        setStatus("toxicity", "error")
         this.initializationPromise = null
-        throw err
+        throw error
       })
 
     return this.initializationPromise
@@ -120,83 +175,69 @@ class ToxicityClassifier {
 
   static unload() {
     this.initializationPromise = null
-    modelStatuses.toxicity = "idle"
-    broadcastStatus()
+    this.cache.clear()
+    setStatus("toxicity", "idle")
   }
 
   static analyze(text: string): Promise<Record<string, number>> {
-    if (this.cache.has(text)) {
-      return this.cache.get(text)!
-    }
+    const cached = lruGet(this.cache, text)
+    if (cached) return cached
 
-    const analysisPromise = (async () => {
+    const analysis = (async () => {
       try {
+        // Start the (possibly multi-minute) model download before entering the
+        // inference queue, so toxicity and bias can download in parallel.
         const classifier = await this.getInstance()
-        // Pass topk as a runtime inference option (not top_k) to get all label scores
-        const results = (await (classifier as any)(text.slice(0, 512), {
-          topk: 16
-        })) as Array<{ label: string; score: number }>
-
-        const scores: Record<string, number> = {}
-        for (const r of results) {
-          scores[r.label] = r.score
-        }
-        return scores
+        return await inferenceQueue.run(async () => {
+          const results = (await classifier(sampleText(text, 1200), {
+            topk: 16
+          })) as Array<{ label: string; score: number }>
+          const scores: Record<string, number> = {}
+          for (const result of results) scores[result.label] = result.score
+          return scores
+        })
       } catch (error) {
-        ToxicityClassifier.cache.delete(text)
+        this.cache.delete(text)
         throw error
       }
     })()
 
-    // Limit cache size to prevent memory leaks in long sessions
-    if (this.cache.size > 1000) {
-      const firstKey = this.cache.keys().next().value
-      if (firstKey) this.cache.delete(firstKey)
-    }
-    this.cache.set(text, analysisPromise)
-
-    return analysisPromise
+    lruSet(this.cache, text, analysis, 400)
+    return analysis
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tier 2: Bias & Clickbait Classifier
+// Tier 2: Bias & clickbait classifier
 //   Model: protectai/distilroberta-bias-onnx
-//   Labels: BIASED / NON-BIASED
-//   Trained to detect political/media bias, opinionated slant, and clickbait.
+//   Labels: BIASED / NEUTRAL
 // ─────────────────────────────────────────────────────────────────────────────
 const BIAS_MODEL = "protectai/distilroberta-bias-onnx"
-const BIAS_THRESHOLD = 0.5
 
 class BiasClassifier {
-  // Bolt Optimization: Cache the Promise rather than the resolved object to prevent race conditions
-  // where multiple concurrent requests for the same text trigger redundant, parallel pipeline executions.
   private static cache = new Map<string, Promise<number>>()
   private static initializationPromise: Promise<any> | null = null
 
-  static getInstance() {
+  static getInstance(): Promise<any> {
     if (this.initializationPromise) return this.initializationPromise
 
-    // Prevent race conditions during concurrent accesses by caching the promise
-    console.log("[Neoblocker] Loading Bias model on CPU (WASM)...")
-    modelStatuses.bias = "loading"
-    broadcastStatus()
+    console.log("[Neoblocker] Loading bias model (WASM)…")
+    setStatus("bias", "loading")
 
     this.initializationPromise = pipeline("text-classification", BIAS_MODEL, {
-      model_file_name: "../model"
+      model_file_name: "../model",
+      progress_callback: progressCallback("bias")
     })
       .then((pipe) => {
-        console.log("[Neoblocker] Bias model loaded.")
-        modelStatuses.bias = "loaded"
-        broadcastStatus()
+        console.log("[Neoblocker] Bias model ready.")
+        setStatus("bias", "loaded")
         return pipe as any
       })
-      .catch((err) => {
-        console.error("[Neoblocker] Failed to load Bias model:", err)
-        modelStatuses.bias = "error"
-        broadcastStatus()
+      .catch((error) => {
+        console.error("[Neoblocker] Bias model failed to load:", error)
+        setStatus("bias", "error")
         this.initializationPromise = null
-        throw err
+        throw error
       })
 
     return this.initializationPromise
@@ -204,42 +245,66 @@ class BiasClassifier {
 
   static unload() {
     this.initializationPromise = null
-    modelStatuses.bias = "idle"
-    broadcastStatus()
+    this.cache.clear()
+    setStatus("bias", "idle")
   }
 
   static analyze(text: string): Promise<number> {
-    if (this.cache.has(text)) {
-      return this.cache.get(text)!
-    }
+    const cached = lruGet(this.cache, text)
+    if (cached) return cached
 
-    const analysisPromise = (async () => {
+    const analysis = (async () => {
       try {
+        // See ToxicityClassifier.analyze: downloads must not hold the queue.
         const classifier = await this.getInstance()
-        const results = (await (classifier as any)(
-          text.slice(0, 512)
-        )) as Array<{
-          label: string
-          score: number
-        }>
-        const result = results[0]
-        return result && result.label === "BIASED" ? result.score : 0
+        return await inferenceQueue.run(async () => {
+          const results = (await classifier(sampleText(text, 1200))) as Array<{
+            label: string
+            score: number
+          }>
+          const result = results[0]
+          return result && result.label === "BIASED" ? result.score : 0
+        })
       } catch (error) {
-        BiasClassifier.cache.delete(text)
+        this.cache.delete(text)
         throw error
       }
     })()
 
-    if (this.cache.size > 1000) {
-      const firstKey = this.cache.keys().next().value
-      if (firstKey) this.cache.delete(firstKey)
-    }
-    this.cache.set(text, analysisPromise)
-
-    return analysisPromise
+    lruSet(this.cache, text, analysis, 400)
+    return analysis
   }
 }
 
+/** Free models that the user has switched off and keep enabled ones warm. */
+export function applyModelSettings(settings: ExtensionSettings) {
+  if (!settings.enableToxicity && modelStatuses.toxicity !== "idle") {
+    ToxicityClassifier.unload()
+  }
+  if (!settings.enableBias && modelStatuses.bias !== "idle") {
+    BiasClassifier.unload()
+  }
+}
+
+/** Load the models ahead of the first page scan (popup open / retry). */
+export async function warmupModels(
+  settings: ExtensionSettings
+): Promise<ModelStatuses> {
+  const tasks: Promise<unknown>[] = []
+  if (settings.enableToxicity) {
+    tasks.push(ToxicityClassifier.getInstance().catch(() => undefined))
+  }
+  if (settings.enableBias) {
+    tasks.push(BiasClassifier.getInstance().catch(() => undefined))
+  }
+  await Promise.all(tasks)
+  broadcastStatus(true)
+  return getModelStatuses()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Detection logic
+// ─────────────────────────────────────────────────────────────────────────────
 const SAFE_CONTEXT_KEYWORDS = [
   // Gaming
   "gameplay",
@@ -253,7 +318,7 @@ const SAFE_CONTEXT_KEYWORDS = [
   "tournament",
   "lore",
   "playthrough",
-  // Education & History
+  // Education & history
   "history",
   "documentary",
   "science",
@@ -273,144 +338,101 @@ const SAFE_CONTEXT_KEYWORDS = [
   "challenge"
 ]
 
-// Pre-compiled regex with word boundaries to optimize search performance and accuracy
 const SAFE_CONTEXT_REGEX = new RegExp(
-  `\\b(${SAFE_CONTEXT_KEYWORDS.map((kw) => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")).join("|")})\\b`,
+  `\\b(${SAFE_CONTEXT_KEYWORDS.map((keyword) =>
+    keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  ).join("|")})\\b`,
   "i"
 )
 
-function normalizeText(str: string): string {
-  return str.replace(/\s+/g, " ").trim()
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim()
 }
 
-// Bolt Optimization: Cache the parsed array of exception keywords and static configurations
-// to avoid repeated parsing logic and memory allocations inside high-frequency analysis loops.
-let cachedExceptionString: string | null = null
-let cachedExceptionRegex: RegExp | null = null
+function clampThreshold(value: unknown, fallback: number): number {
+  const number = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(0.95, Math.max(0.05, number))
+}
 
-const HATE_KEYWORDS = [
-  "kkk",
-  "white supremacist",
-  "grand wizard",
-  "neo-nazi",
-  "racist",
-  "racism"
-]
-
-// Bolt Optimization: Pre-compile static hate keywords into a single regex to avoid
-// repeated array iteration and multiple string searches per analysis.
-const HATE_REGEX = new RegExp(
-  `(${HATE_KEYWORDS.map((kw) => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")).join("|")})`,
-  "i"
-)
+export interface AnalysisResult {
+  action: "LOCAL_BLOCK" | "SAFE"
+  reason?: string
+  /** Set when a model could not run; callers must not cache this result. */
+  error?: string
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main Entry Point: analyzeContent
+// Main entry point: analyzeContent
 // ─────────────────────────────────────────────────────────────────────────────
 export async function analyzeContent(
   text: string,
   settings: ExtensionSettings,
-  isTitle: boolean = false
-): Promise<{ action: "LOCAL_BLOCK" | "SAFE"; reason?: string }> {
+  isTitle = false
+): Promise<AnalysisResult> {
   try {
+    if (!settings.enabled) return { action: "SAFE" }
+
     const cleanText = normalizeText(text)
     if (cleanText.length < 12) return { action: "SAFE" }
 
-    // User-configured exceptions check (e.g. mrbeast, ludwig, jojo)
-    const rawExceptions =
-      typeof settings.exceptions === "string" ? settings.exceptions : ""
-    if (rawExceptions !== cachedExceptionString) {
-      cachedExceptionString = rawExceptions
-      const arr = rawExceptions
-        .split(",")
-        .map((kw) => kw.trim().toLowerCase())
-        .filter((kw) => kw.length > 0)
-      cachedExceptionRegex =
-        arr.length > 0
-          ? new RegExp(
-              arr
-                .map((kw) => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"))
-                .join("|"),
-              "i"
-            )
-          : null
-    }
-
-    if (cachedExceptionRegex !== null) {
-      if (cachedExceptionRegex.test(cleanText)) {
-        console.log(`[Neoblocker] Exception matched. Bypassing analysis.`)
-        return { action: "SAFE" }
-      }
+    if (matchesAnyKeyword(settings.exceptions, cleanText)) {
+      return { action: "SAFE" }
     }
 
     const isSafeContext = SAFE_CONTEXT_REGEX.test(cleanText)
+    let modelError = false
 
-    // Run classifiers in parallel
-    const promises: [Promise<Record<string, number>>, Promise<number>] = [
+    const [toxScores, biasScore] = await Promise.all([
       settings.enableToxicity
-        ? ToxicityClassifier.analyze(cleanText).catch((err) => {
-            console.error("[Neoblocker] Toxicity analysis failed:", err)
-            return {}
+        ? ToxicityClassifier.analyze(cleanText).catch((error) => {
+            console.error("[Neoblocker] Toxicity analysis failed:", error)
+            modelError = true
+            return {} as Record<string, number>
           })
-        : Promise.resolve({}),
+        : Promise.resolve({} as Record<string, number>),
       settings.enableBias && !isSafeContext && !isTitle
-        ? BiasClassifier.analyze(cleanText).catch((err) => {
-            console.error("[Neoblocker] Bias analysis failed:", err)
+        ? BiasClassifier.analyze(cleanText).catch((error) => {
+            console.error("[Neoblocker] Bias analysis failed:", error)
+            modelError = true
             return 0
           })
         : Promise.resolve(0)
-    ]
-
-    const [toxScores, biasScore] = await Promise.all(promises)
-
-    if (!settings.enableToxicity) ToxicityClassifier.unload()
-    if (!settings.enableBias) BiasClassifier.unload()
+    ])
 
     const toxicity = toxScores["toxicity"] || 0
-    const severe_toxicity = toxScores["severe_toxicity"] || 0
+    const severeToxicity = toxScores["severe_toxicity"] || 0
     const obscene = toxScores["obscene"] || 0
     const threat = toxScores["threat"] || 0
     const insult = toxScores["insult"] || 0
-    let identity_attack = toxScores["identity_attack"] || 0
-    const sexual_explicit = toxScores["sexual_explicit"] || 0
+    let identityAttack = toxScores["identity_attack"] || 0
+    const sexualExplicit = toxScores["sexual_explicit"] || 0
 
-    // Elevate identity attack score for explicit hate speech/extremist keywords (e.g. kkk, white supremacist, grand wizard, racist)
-    const hasHateKeyword = HATE_REGEX.test(cleanText)
-    if (hasHateKeyword && settings.enableToxicity) {
-      console.log(
-        "[Neoblocker] Hate/racism topic keyword detected. Elevating identity_attack score to 0.85."
-      )
-      identity_attack = Math.max(identity_attack, 0.85)
+    // Explicit hate/extremist terms are a strong signal that the unbiased
+    // model sometimes under-scores. Elevate identity_attack for those.
+    if (settings.enableToxicity && HATE_REGEX.test(cleanText)) {
+      identityAttack = Math.max(identityAttack, 0.85)
     }
 
-    const userToxLimit =
-      settings.toxicityThreshold !== undefined
-        ? settings.toxicityThreshold
-        : 0.55
-    const userRacismLimit =
-      settings.racismThreshold !== undefined ? settings.racismThreshold : 0.25
-    const userBiasLimit =
-      settings.biasThreshold !== undefined ? settings.biasThreshold : 0.7
+    const toxicityLimit = clampThreshold(settings.toxicityThreshold, 0.5)
+    const racismLimit = clampThreshold(settings.racismThreshold, 0.25)
+    const biasLimit = clampThreshold(settings.biasThreshold, 0.5)
 
-    // ───────────────────────────────────────────────────────────────────────────
-    // Pass One: The Title Scan (Fast-Fail Layer)
-    // ───────────────────────────────────────────────────────────────────────────
+    // ── Pass one: fast title scan ────────────────────────────────────────────
     if (isTitle) {
       if (settings.enableToxicity) {
-        // 1. Extreme Title Violations
-        if (sexual_explicit >= 0.85) {
+        if (sexualExplicit >= 0.85) {
           return { action: "LOCAL_BLOCK", reason: "Explicit Content (Title)" }
         }
         if (threat >= 0.8) {
           return { action: "LOCAL_BLOCK", reason: "Threats & Violence (Title)" }
         }
 
-        // 2. Combined Title Context
-        const identityAttackLimit = Math.min(userRacismLimit, 0.45)
-        const toxicityLimitForTitle = Math.min(userToxLimit, 0.35)
+        const identityAttackLimit = Math.min(racismLimit, 0.45)
+        const titleToxicityLimit = Math.min(toxicityLimit, 0.35)
         if (
-          identity_attack >= identityAttackLimit &&
-          toxicity >= toxicityLimitForTitle
+          identityAttack >= identityAttackLimit &&
+          toxicity >= titleToxicityLimit
         ) {
           return {
             action: "LOCAL_BLOCK",
@@ -418,45 +440,35 @@ export async function analyzeContent(
           }
         }
 
-        const severeToxLimitForTitle = Math.min(userToxLimit * 0.8, 0.4)
-        const insultLimitForTitle = Math.min(userToxLimit * 0.8, 0.4)
-        if (
-          severe_toxicity >= severeToxLimitForTitle &&
-          insult >= insultLimitForTitle
-        ) {
+        const severeLimit = Math.min(toxicityLimit * 0.8, 0.4)
+        const insultLimit = Math.min(toxicityLimit * 0.8, 0.4)
+        if (severeToxicity >= severeLimit && insult >= insultLimit) {
           return {
             action: "LOCAL_BLOCK",
             reason: "Hostile / Harassing Content (Title)"
           }
         }
       }
-      // If the title does not trigger the above, pass to Deep Scan
-      return { action: "SAFE" }
+      return modelError
+        ? { action: "SAFE", error: "Model unavailable" }
+        : { action: "SAFE" }
     }
 
-    // ───────────────────────────────────────────────────────────────────────────
-    // Pass Two: The Deep Scan (Subtitles and Comments)
-    // ───────────────────────────────────────────────────────────────────────────
+    // ── Pass two: deep scan (subtitles and comments) ─────────────────────────
     if (settings.enableToxicity) {
-      // 1. High-Priority Safety Interceptors
       if (threat >= 0.35) {
         return { action: "LOCAL_BLOCK", reason: "Threats & Violence" }
       }
-      if (sexual_explicit >= 0.75) {
+      if (sexualExplicit >= 0.75) {
         return { action: "LOCAL_BLOCK", reason: "Explicit Content" }
       }
 
-      // 2. The Positivity Buffer (Educational Protection)
+      // Positivity buffer: a mild identity score without hostile signals is
+      // often a documentary/educational sentence, so let it through.
       let blockIdentity = false
-      if (identity_attack >= userRacismLimit) {
-        if (identity_attack <= 0.5) {
-          if (severe_toxicity >= 0.1 || insult >= 0.2) {
-            blockIdentity = true
-          } else {
-            console.log(
-              `[Neoblocker] Positivity Buffer triggered. Ignored identity_attack of ${identity_attack.toFixed(2)}.`
-            )
-          }
+      if (identityAttack >= racismLimit) {
+        if (identityAttack <= 0.5) {
+          if (severeToxicity >= 0.1 || insult >= 0.2) blockIdentity = true
         } else {
           blockIdentity = true
         }
@@ -465,24 +477,24 @@ export async function analyzeContent(
         return { action: "LOCAL_BLOCK", reason: "Hate Speech & Discrimination" }
       }
 
-      // 3. The Harassment Gate
-      if (settings.enableObscene) {
-        if (obscene >= 0.75 && insult >= 0.65 && severe_toxicity >= 0.2) {
-          return { action: "LOCAL_BLOCK", reason: "Abusive Harassment" }
-        }
+      if (
+        settings.enableObscene &&
+        obscene >= 0.75 &&
+        insult >= 0.65 &&
+        severeToxicity >= 0.2
+      ) {
+        return { action: "LOCAL_BLOCK", reason: "Abusive Harassment" }
       }
 
-      // 4. Cumulative Toxicity Score
       const toxicityScore =
-        toxicity * 0.4 + insult * 0.3 + severe_toxicity * 0.3
-      if (toxicityScore >= userToxLimit) {
+        toxicity * 0.4 + insult * 0.3 + severeToxicity * 0.3
+      if (toxicityScore >= toxicityLimit) {
         return { action: "LOCAL_BLOCK", reason: "Toxic / Hostile Content" }
       }
     }
 
-    // 5. The Rage-Bait Gate (Bias & Clickbait)
     if (settings.enableBias && !isSafeContext) {
-      if (biasScore >= userBiasLimit && toxicity >= 0.4) {
+      if (biasScore >= biasLimit && toxicity >= 0.4) {
         return {
           action: "LOCAL_BLOCK",
           reason: "Rage-Bait / Clickbait Content"
@@ -490,13 +502,11 @@ export async function analyzeContent(
       }
     }
 
-    return { action: "SAFE" }
+    return modelError
+      ? { action: "SAFE", error: "Model unavailable" }
+      : { action: "SAFE" }
   } catch (error) {
-    console.error("Analysis pipeline failed:", error)
-    return { action: "SAFE" }
+    console.error("[Neoblocker] Analysis pipeline failed:", error)
+    return { action: "SAFE", error: "Analysis failed" }
   }
-}
-
-export function getModelStatuses(): ModelStatuses {
-  return { ...modelStatuses }
 }

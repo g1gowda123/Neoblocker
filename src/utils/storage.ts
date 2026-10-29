@@ -30,13 +30,13 @@ export const STATS_KEY = "neoblocker_stats"
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   enableToxicity: true,
-  enableBias: true,
+  enableBias: false,
   toxicityThreshold: 0.5,
   biasThreshold: 0.5,
   theme: "dark",
   exceptions: "",
   enableObscene: true,
-  racismThreshold: 0.25,
+  racismThreshold: 0.15,
   filterMode: "blur",
   bannedKeywords: "",
   deepScan: true

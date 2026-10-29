@@ -1,21 +1,24 @@
 {
   "name": "neoblocker",
   "displayName": "Neoblocker — Local AI YouTube Filter",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Blocks toxic, hateful and rage-bait YouTube content with on-device AI. Private, local and fast.",
   "author": "Neoblocker",
   "license": "MIT",
   "scripts": {
-    "dev": "npm run copy-wasm:dev && plasmo dev",
+    "dev": "npm run copy-wasm:dev && npm run copy-model:dev && plasmo dev",
     "build": "npm run build:chrome",
-    "build:chrome": "plasmo build --target=chrome-mv3 && npm run copy-wasm:chrome",
-    "build:firefox": "plasmo build --target=firefox-mv3 && npm run copy-wasm:firefox",
+    "build:chrome": "plasmo build --target=chrome-mv3 && npm run copy-wasm:chrome && npm run copy-model:chrome",
+    "build:firefox": "plasmo build --target=firefox-mv3 && npm run copy-wasm:firefox && npm run copy-model:firefox",
     "package": "plasmo package",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test",
     "copy-wasm:dev": "mkdir -p build/chrome-mv3-dev/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/chrome-mv3-dev/wasm/ && echo [copy-wasm:dev] done.",
     "copy-wasm:chrome": "mkdir -p build/chrome-mv3-prod/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/chrome-mv3-prod/wasm/ && echo [copy-wasm:chrome] done.",
     "copy-wasm:firefox": "mkdir -p build/firefox-mv3-prod/wasm && cp node_modules/@xenova/transformers/dist/ort-wasm-simd.wasm build/firefox-mv3-prod/wasm/ && echo [copy-wasm:firefox] done.",
+    "copy-model:dev": "mkdir -p build/chrome-mv3-dev/models && cp -R assets/models/. build/chrome-mv3-dev/models/ && echo [copy-model:dev] done.",
+    "copy-model:chrome": "mkdir -p build/chrome-mv3-prod/models && cp -R assets/models/. build/chrome-mv3-prod/models/ && echo [copy-model:chrome] done.",
+    "copy-model:firefox": "mkdir -p build/firefox-mv3-prod/models && cp -R assets/models/. build/firefox-mv3-prod/models/ && echo [copy-model:firefox] done.",
     "test": "vitest run"
   },
   "dependencies": {

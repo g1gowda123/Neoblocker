@@ -208,12 +208,15 @@ function Popup() {
   }, [])
 
   const preload = () => {
-    if (statuses.toxicity === "loaded" && statuses.bias === "loaded") {
+    const enabledLoaded =
+      (!settings.enableToxicity || statuses.toxicity === "loaded") &&
+      (!settings.enableBias || statuses.bias === "loaded")
+    if (enabledLoaded) {
       showToast("Models are already loaded.")
       return
     }
     setPreloading(true)
-    showToast("Downloading models — this can take a few minutes.")
+    showToast("Loading models — the optional bias model can take a few minutes.")
     try {
       chrome.runtime.sendMessage({ action: "warmupModels" }, (response) => {
         if (chrome.runtime?.lastError) {
@@ -305,7 +308,7 @@ function Popup() {
     try {
       return chrome.runtime.getManifest().version
     } catch {
-      return "1.1.0"
+      return "1.2.0"
     }
   })()
 
@@ -407,7 +410,13 @@ function Popup() {
             <Switch
               checked={settings.enableToxicity}
               label="Toxicity filtering"
-              onChange={(value) => update({ enableToxicity: value })}
+              onChange={(value) =>
+                update(
+                  value
+                    ? { enableToxicity: true }
+                    : { enableToxicity: false, enableBias: false }
+                )
+              }
             />
           </div>
           <Slider
@@ -449,12 +458,13 @@ function Popup() {
             <div className="nb-row-text">
               <div className="nb-row-label">Rage-bait &amp; bias</div>
               <div className="nb-row-hint">
-                A supporting signal; only blocks when toxicity is also detected
+                Optional. Adds an 83 MB model download the first time it runs.
               </div>
             </div>
             <Switch
               checked={settings.enableBias}
               label="Bias filtering"
+              disabled={!settings.enableToxicity}
               onChange={(value) => update({ enableBias: value })}
             />
           </div>
@@ -462,7 +472,7 @@ function Popup() {
             label="Bias threshold"
             hint="Only blocks biased text that also carries toxic signals."
             value={settings.biasThreshold}
-            disabled={!settings.enableBias}
+            disabled={!settings.enableBias || !settings.enableToxicity}
             onChange={(value) => update({ biasThreshold: value }, false)}
           />
         </section>
@@ -572,7 +582,7 @@ function Popup() {
           <div className="nb-row">
             <div className="nb-row-text">
               <div className="nb-row-label">Toxicity classifier</div>
-              <div className="nb-row-hint">Runs on-device · ~120 MB</div>
+              <div className="nb-row-hint">Runs on-device · bundled ~23 MB</div>
             </div>
             {statusBadge(statuses.toxicity, statuses.progress.toxicity)}
           </div>
@@ -585,13 +595,20 @@ function Popup() {
             {statusBadge(statuses.bias, statuses.progress.bias)}
           </div>
 
-          {statuses.toxicity === "error" || statuses.bias === "error" ? (
+          {statuses.toxicity === "error" ? (
             <p className="nb-hint" style={{ color: "var(--danger)" }}>
-              A model failed to load. Check your connection, then press Preload to retry.
+              The bundled toxicity model failed to load. Reload the extension
+              from chrome://extensions and try again.
+            </p>
+          ) : statuses.bias === "error" ? (
+            <p className="nb-hint" style={{ color: "var(--danger)" }}>
+              The optional bias model failed to download. Check your connection,
+              then press Preload to retry.
             </p>
           ) : (
             <p className="nb-hint">
-              Weights download once from Hugging Face and are cached by the browser. Text never leaves your device.
+              The toxicity model is bundled. Optional bias weights download once
+              and are cached locally. Text never leaves your device.
             </p>
           )}
         </section>

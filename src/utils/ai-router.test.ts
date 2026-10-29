@@ -6,13 +6,12 @@ import type { ExtensionSettings } from "./storage"
 
 const modelState = vi.hoisted(() => ({
   scores: {
-    toxicity: 0.1,
-    severe_toxicity: 0.05,
+    toxic: 0.1,
+    severe_toxic: 0.05,
     obscene: 0.05,
     threat: 0.05,
     insult: 0.05,
-    identity_attack: 0.05,
-    sexual_explicit: 0.05
+    identity_hate: 0.05
   } as Record<string, number>,
   bias: 0.9,
   throwError: false,
@@ -25,9 +24,7 @@ vi.mock("@xenova/transformers", () => {
     if (modelState.throwError) throw new Error("model load failed")
 
     return async (_text: string) => {
-      // "unbiased-toxic-roberta" also contains the substring "bias", so match
-      // the exact bias model id instead.
-      if (model === "protectai/distilroberta-bias-onnx") {
+      if (model.includes("protectai/distilroberta-bias-onnx")) {
         return [{ label: "BIASED", score: modelState.bias }]
       }
       return Object.entries(modelState.scores).map(([label, score]) => ({
@@ -65,13 +62,12 @@ describe("analyzeContent", () => {
     modelState.bias = 0.9
     modelState.calls = []
     modelState.scores = {
-      toxicity: 0.1,
-      severe_toxicity: 0.05,
+      toxic: 0.1,
+      severe_toxic: 0.05,
       obscene: 0.05,
       threat: 0.05,
       insult: 0.05,
-      identity_attack: 0.05,
-      sexual_explicit: 0.05
+      identity_hate: 0.05
     }
     unloadModels()
     vi.spyOn(console, "error").mockImplementation(() => {})
@@ -89,16 +85,16 @@ describe("analyzeContent", () => {
   })
 
   it("skips bias analysis when a safe-context keyword is a whole word", async () => {
+    modelState.scores.toxic = 0.7
+
     const result = await analyzeContent(
       "This is a video tutorial on coding",
-      settings(),
+      settings({ enableBias: true }),
       false
     )
 
     expect(result.action).toBe("SAFE")
-    expect(modelState.calls).toContain(
-      "protectai/unbiased-toxic-roberta-onnx"
-    )
+    expect(modelState.calls).toContain("minilm")
     expect(modelState.calls).not.toContain(
       "protectai/distilroberta-bias-onnx"
     )
@@ -106,11 +102,29 @@ describe("analyzeContent", () => {
 
   it("still runs bias analysis when a safe keyword is only part of a word", async () => {
     modelState.bias = 0.95
-    modelState.scores.toxicity = 0.7
+    modelState.scores.toxic = 0.7
 
-    await analyzeContent("There is a mismatch in the results", settings(), false)
+    await analyzeContent(
+      "There is a mismatch in the results",
+      settings({ enableBias: true }),
+      false
+    )
 
-    expect(modelState.calls).toContain("protectai/distilroberta-bias-onnx")
+    expect(modelState.calls).toContain(
+      "protectai/distilroberta-bias-onnx"
+    )
+  })
+
+  it("does not download the bias model unless it is enabled and toxicity fires", async () => {
+    modelState.scores.toxic = 0.7
+
+    await analyzeContent(
+      "This sentence is clearly toxic enough to trigger the classifier",
+      settings(),
+      false
+    )
+
+    expect(modelState.calls).toEqual(["minilm"])
   })
 
   it("blocks a threatening title in the fast title pass", async () => {
@@ -127,9 +141,9 @@ describe("analyzeContent", () => {
   })
 
   it("blocks strongly toxic deep-scan text using the weighted score", async () => {
-    modelState.scores.toxicity = 0.8
+    modelState.scores.toxic = 0.8
     modelState.scores.insult = 0.5
-    modelState.scores.severe_toxicity = 0.3
+    modelState.scores.severe_toxic = 0.3
 
     const result = await analyzeContent(
       "You are a worthless piece of trash and everyone hates you",
@@ -139,6 +153,32 @@ describe("analyzeContent", () => {
 
     expect(result.action).toBe("LOCAL_BLOCK")
     expect(result.reason).toContain("Toxic")
+  })
+
+  it("blocks identity hate when the compact model scores toxicity and identity_hate", async () => {
+    modelState.scores.toxic = 0.64
+    modelState.scores.identity_hate = 0.171
+    modelState.scores.insult = 0.04
+
+    const result = await analyzeContent(
+      "I hate those immigrants, they are ruining everything",
+      settings(),
+      false
+    )
+
+    expect(result.action).toBe("LOCAL_BLOCK")
+    expect(result.reason).toContain("Hate Speech")
+  })
+
+  it("uses the explicit-term fallback for titles without a sexual_explicit label", async () => {
+    const result = await analyzeContent(
+      "Porn stars reveal their secrets",
+      settings(),
+      true
+    )
+
+    expect(result.action).toBe("LOCAL_BLOCK")
+    expect(result.reason).toContain("Explicit")
   })
 
   it("returns an error instead of SAFE when a model cannot load", async () => {

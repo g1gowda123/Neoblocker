@@ -19,7 +19,7 @@
 
 Neoblocker is a Manifest V3 browser extension that runs small text classifiers **inside your browser**. It watches YouTube cards and comments, sends text to a local model, and replaces flagged items with a quiet "Filtered by Neoblocker" overlay. There is no account, no analytics, and no inference API.
 
-The first time a model is used, its weights are downloaded from Hugging Face and cached by the browser. After that, classification is local and works offline.
+The toxicity model is bundled with the extension, so filtering works out of the box with no model download. The optional bias/rage-bait model is downloaded from Hugging Face the first time you enable it and is then cached by the browser. Classification is local either way.
 
 > **Privacy in one sentence:** the models run on your device; your browsing text is never uploaded to a server.
 
@@ -35,14 +35,15 @@ The first time a model is used, its weights are downloaded from Hugging Face and
 
 ## Features
 
-- **Two local models** — toxicity/hate speech and bias/rage-bait classification using Transformers.js and WebAssembly.
+- **Compact bundled model** — a 23 MB int8 toxicity/hate-speech classifier runs locally via Transformers.js and WebAssembly, with no first-run download.
+- **Optional bias model** — adds an ~83 MB bias/rage-bait classifier only if you turn it on.
 - **Fast title pass** — scans video titles as cards render, without waiting for a full page load.
 - **Optional deep scan** — checks subtitles and comments for visible videos, capped at two concurrent requests.
 - **Your call on every block** — **Show anyway** reveals a single item for the tab session; **Allow channel** adds the channel to your exceptions.
 - **Blur or hide** — blur with a reason, or remove flagged items from the page entirely.
 - **Keyword rules** — always-block and never-block lists, matched against titles, channels, and comments.
 - **Useful controls** — master pause switch, threshold sliders, per-model status, one-click model preload, daily filtered counter, and a badge on the toolbar icon.
-- **Private by design** — settings and counts live in `chrome.storage.local`; the only network requests are to YouTube (page/subtitles/comments) and Hugging Face (model weights).
+- **Private by design** — settings and counts live in `chrome.storage.local`; the only network requests are to YouTube (page/subtitles/comments) and, only if you enable the optional bias model, Hugging Face (model weights).
 - **Accessible popup** — keyboard-friendly switches, labelled controls, light/dark themes, and a scrollable 360 px layout.
 
 ## Install
@@ -75,16 +76,16 @@ npm run package
 
 The unpacked build is in `build/chrome-mv3-prod`; the distributable zip is `build/chrome-mv3-prod.zip`.
 
-## First run: models
+## Models
 
-Neoblocker ships without model weights so the extension stays small. On first use it downloads:
+The toxicity classifier ships inside the extension, so the default filter works offline immediately. It is a quantized MiniLM model trained on the Jigsaw toxic-comment dataset:
 
-| Model | Purpose | Approx. size |
+| Model | Purpose | Size |
 | --- | --- | ---: |
-| `protectai/unbiased-toxic-roberta-onnx` | Toxicity, threats, insults, identity attacks, explicit content | ~120 MB |
-| `protectai/distilroberta-bias-onnx` | Bias and sensational/rage-bait framing | ~83 MB |
+| `minuva/MiniLMv2-toxic-jigsaw-onnx` (bundled) | Toxicity, threats, insults, identity hate | ~23 MB |
+| `protectai/distilroberta-bias-onnx` (optional) | Bias and sensational/rage-bait framing | ~83 MB |
 
-The popup shows download progress and a **Preload** button. Weights are cached by the browser, so this is normally a one-time cost. If a download fails, check your connection and press **Preload** again.
+The optional bias model is **off by default**. Enable **Rage-bait & bias** in the popup to download it on first use; it is cached afterwards. The popup shows progress and a **Preload** button for enabled models. If an optional download fails, check your connection and press **Preload** again.
 
 Deep scan is the only feature that fetches extra YouTube data (the watch page, subtitles, and a sample of comments). Title and comment scanning on the page itself works without those requests.
 
@@ -126,7 +127,7 @@ Deep scan is the only feature that fetches extra YouTube data (the watch page, s
 2. **Banned keywords** are checked next; matching cards/comments are always blocked.
 3. **Titles** get a fast toxicity pass with stricter gates for explicit content, threats, hate speech, and severe insults.
 4. **Comments and deep scans** use the full gate set, including a positivity/context buffer so documentaries and educational discussions are not blocked for merely mentioning a sensitive topic.
-5. **Bias** is only used as a supporting signal alongside toxic tone, which keeps rage-bait detection from turning into a generic opinion filter.
+5. **Bias** is optional and only used as a supporting signal alongside toxic tone, which keeps rage-bait detection from turning into a generic opinion filter.
 
 Thresholds are clamped to 5–95% and interpreted as **minimum confidence to block**. Lower values are stricter.
 
@@ -139,7 +140,7 @@ Thresholds are clamped to 5–95% and interpreted as **minimum confidence to blo
 | **Toxicity threshold** | Overall confidence needed to block; lower flags more. |
 | **Hate speech threshold** | Separate threshold for identity attacks and extremist language. |
 | **Abusive profanity** | Extra obscene-insult check. |
-| **Rage-bait & bias** | Enables the bias model; only blocks biased text with toxic signals. |
+| **Rage-bait & bias** | Optional ~83 MB bias model; only blocks biased text with toxic signals. Off by default. |
 | **Bias threshold** | Confidence threshold for the bias/rage-bait signal. |
 | **Deep scan** | Fetches subtitles and sampled comments for visible videos. Turn off for maximum performance. |
 | **Filter mode** | **Blur with reason** or **Hide completely**. |
@@ -183,8 +184,11 @@ src/
     storage.ts                  settings, stats, serialized storage writes
 assets/
   icon.svg / icon.png           source and 512 px store icon
+  models/minilm/                bundled toxicity model (Apache-2.0)
 docs/                           README screenshots
 ```
+
+The bundled model is derived from `minuva/MiniLMv2-toxic-jigsaw-onnx`; see `assets/models/minilm/NOTICE.md` for provenance and the local ONNX metadata change.
 
 ### Adding a rule or threshold
 
@@ -196,24 +200,26 @@ Neoblocker requests only:
 
 - `storage` — save settings and the local daily counter.
 - `https://youtube.com/*` and `https://*.youtube.com/*` — run the content script and fetch watch pages/subtitles/comments for deep scan.
-- `https://huggingface.co/*`, `https://*.huggingface.co/*`, `https://*.hf.co/*` — download model weights once.
+- `https://huggingface.co/*`, `https://*.huggingface.co/*`, `https://*.hf.co/*` — download the optional bias model weights when you enable it.
 
 There is no `tabs`, `history`, `cookies`, or `<all_urls>` permission. The extension does not read or transmit pages other than YouTube, does not use cookies or credentials for its fetches, and does not include analytics or remote code. Reveal choices are stored in `sessionStorage` for the current tab session; settings and the daily count are stored in `chrome.storage.local`.
 
 ## Limitations
 
-- The bundled classifiers are trained primarily on English text. Other languages may be under-filtered.
+- The bundled classifier is trained primarily on English text. Other languages may be under-filtered.
+- The compact toxicity model has no dedicated sexual-content label; an explicit-term heuristic covers common cases, but it is less precise than the previous 120 MB model.
+- The optional bias model is larger (~83 MB) and is off by default to keep installation and first-run bandwidth small.
 - This is a heuristic content filter, not a parental-control or security boundary. Do not rely on it as the only safeguard for a child or a shared device.
 - YouTube changes its DOM regularly. If cards stop being recognized, open an issue with the browser version and a screenshot.
 - Deep scan fetches public video text from YouTube; it adds latency and network usage. It is limited to visible cards and two concurrent requests.
-- The first model load can take a while on slow connections. The UI reports progress and allows retries.
+- The bundled model loads locally in well under a second. The optional bias model downloads ~83 MB on first use; the UI reports progress and allows retries.
 
 ## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
 | Nothing is filtered | Check that **Protection** is on and the page was reloaded after installing. Open the popup on a YouTube tab. |
-| "Model unavailable" / model error | Check your connection, press **Preload**, and retry. Corporate proxies may block `huggingface.co` or `*.hf.co`. |
+| "Model unavailable" / model error | The bundled toxicity model should load offline; reload the extension. If the optional bias model is enabled, check your connection, press **Preload**, and retry. |
 | Deep scan never finishes | Turn off deep scan or try a shorter video. Subtitle/comment availability varies by video. |
 | Popup says "Open a YouTube tab first" | The restore action needs an active YouTube tab running the content script. Reload that tab after updating the extension. |
 | Stale UI after an update | Reload the extension in `chrome://extensions`, then reload YouTube. |

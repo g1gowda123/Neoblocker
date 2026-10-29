@@ -2,6 +2,28 @@
 
 All notable changes to Neoblocker are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-10-29
+
+A leaner, faster default build. The toxicity classifier is now bundled, the optional bias model is lazy and off by default, and first-run model bandwidth drops from roughly 208 MB to zero.
+
+### Added
+
+- Bundled 23 MB int8 MiniLM toxicity model (`minuva/MiniLMv2-toxic-jigsaw-onnx`, Apache-2.0), with model provenance and license notice.
+- Optional explicit-content keyword heuristic for the compact model.
+
+### Changed
+
+- Toxicity inference is roughly 5× faster and loads in about 0.3 s locally.
+- The 83 MB bias model is off by default, downloads only when enabled and a toxic signal is detected, and is skipped entirely for safe text.
+- Bias analysis now also applies to toxic titles, improving rage-bait detection without loading the model for every card.
+- Hate-speech threshold default lowered to 15% to compensate for the smaller identity-hate head.
+- Extension package grows from ~11 MB to ~34 MB unpacked, but removes the 208 MB model download; total first-run bytes are far smaller.
+
+### Fixed
+
+- Compact-model label mapping (`toxic`, `severe_toxic`, `identity_hate`) now feeds the existing decision gates.
+- Long/short-title and mild-insult edge cases are covered by a weighted title gate.
+
 ## [1.1.0] — 2026-10-29
 
 A usability, reliability, and privacy-focused release. The core filtering pipeline is unchanged, but the extension is smaller, safer, and much easier to control.

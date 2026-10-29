@@ -1,332 +1,427 @@
-import { analyzeContent, getModelStatuses } from "~utils/ai-router"
-import { getSettings } from "~utils/storage"
+import { analyzeContent, applyModelSettings, getModelStatuses, warmupModels } from "~utils/ai-router"
+import {
+  decodeHtmlEntities,
+  extractJsonBlock,
+  isSafeContinuationToken,
+  isSafeInnerTubeKey,
+  isTrustedYouTubeUrl,
+  isValidVideoId,
+  sampleText
+} from "~utils/extract"
+import {
+  addBlockedCount,
+  getSettings,
+  getStats,
+  STATS_KEY,
+  todayKey
+} from "~utils/storage"
 
-// In-memory cache for analyzed videos to prevent duplicate network calls
-const videoAnalysisCache = new Map<
-  string,
-  Promise<{ action: "LOCAL_BLOCK" | "SAFE"; reason?: string; error?: string }>
->()
+const WATCH_FETCH_TIMEOUT = 12_000
+const SUBTITLE_FETCH_TIMEOUT = 8_000
+const COMMENTS_FETCH_TIMEOUT = 10_000
+const CACHE_TTL = 30 * 60 * 1000
+const CACHE_MAX = 100
 
-function decodeHtmlEntities(str: string): string {
-  return str
-    .replace(/&#(\d+);/g, (match, dec) =>
-      String.fromCharCode(parseInt(dec, 10))
-    )
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'")
+// ─────────────────────────────────────────────────────────────────────────────
+// Small LRU + TTL cache for full-video analyses.
+// ─────────────────────────────────────────────────────────────────────────────
+interface VideoAnalysisResult {
+  action: "LOCAL_BLOCK" | "SAFE"
+  reason?: string
+  error?: string
 }
 
-function extractJsonBlock(html: string, varName: string): string | null {
-  // Bolt Optimization: Offload expensive regex evaluation on large HTML payloads to native indexOf.
-  const targetStr1 = varName + " = {"
-  const targetStr2 = varName + "={"
-  let startIndex = html.indexOf(targetStr1)
-
-  if (startIndex !== -1) {
-    startIndex += targetStr1.length - 1 // point to '{'
-  } else {
-    startIndex = html.indexOf(targetStr2)
-    if (startIndex !== -1) {
-      startIndex += targetStr2.length - 1
-    } else {
-      // Fallback
-      const regex = new RegExp(`${varName}\\s*=\\s*({)`)
-      const match = regex.exec(html)
-      if (!match) return null
-      startIndex = match.index + match[0].length - 1 // Index of the opening brace '{'
-    }
-  }
-
-  let depth = 0
-  let inString = false
-  let escape = false
-
-  for (let i = startIndex; i < html.length; i++) {
-    const char = html[i]
-
-    if (inString) {
-      if (escape) {
-        escape = false
-      } else if (char === "\\") {
-        escape = true
-      } else if (char === '"') {
-        inString = false
-      }
-    } else {
-      if (char === '"') {
-        inString = true
-      } else if (char === "{") {
-        depth++
-      } else if (char === "}") {
-        depth--
-        if (depth === 0) {
-          return html.slice(startIndex, i + 1)
-        }
-      }
-    }
-  }
-  return null
+interface CacheEntry {
+  expires: number
+  value: Promise<VideoAnalysisResult>
 }
 
-async function fetchVideoData(
+const videoAnalysisCache = new Map<string, CacheEntry>()
+
+function getCached(
   videoId: string
-): Promise<{ title: string; deepText: string }> {
+): Promise<VideoAnalysisResult> | undefined {
+  const entry = videoAnalysisCache.get(videoId)
+  if (!entry) return undefined
+  if (entry.expires < Date.now()) {
+    videoAnalysisCache.delete(videoId)
+    return undefined
+  }
+  // Refresh LRU position.
+  videoAnalysisCache.delete(videoId)
+  videoAnalysisCache.set(videoId, entry)
+  return entry.value
+}
+
+function setCached(videoId: string, value: CacheEntry["value"]) {
+  if (videoAnalysisCache.size >= CACHE_MAX) {
+    const oldest = videoAnalysisCache.keys().next().value
+    if (oldest) videoAnalysisCache.delete(oldest)
+  }
+  videoAnalysisCache.set(videoId, { expires: Date.now() + CACHE_TTL, value })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetch helpers
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const url = `https://www.youtube.com/watch?v=${videoId}`
-    const res = await fetch(url)
-    const html = await res.text()
-
-    // 1. Get player response JSON
-    const playerResponseJson = extractJsonBlock(html, "ytInitialPlayerResponse")
-    if (!playerResponseJson) {
-      return { title: "", deepText: "" }
-    }
-    const playerResponse = JSON.parse(playerResponseJson)
-    const videoDetails = playerResponse.videoDetails || {}
-    const title = videoDetails.title || ""
-    const description = videoDetails.shortDescription || ""
-    const author = videoDetails.author || ""
-
-    let subtitlesPromise = Promise.resolve("")
-    let commentsPromise = Promise.resolve("")
-
-    // 2. Setup subtitle fetch promise
-    const captionTracks =
-      playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks
-    if (captionTracks && captionTracks.length > 0) {
-      const englishTrack =
-        captionTracks.find((track: any) => track.languageCode === "en") ||
-        captionTracks[0]
-      if (englishTrack && englishTrack.baseUrl) {
-        try {
-          // SSRF Protection: Validate the extracted subtitle URL before fetching.
-          // Since playerResponseJson is parsed via regex from HTML, attackers could inject
-          // fake JSON blocks into video metadata (like titles) to hijack the baseUrl.
-          const parsedUrl = new URL(
-            englishTrack.baseUrl,
-            "https://www.youtube.com"
-          )
-          if (
-            parsedUrl.protocol === "https:" &&
-            (parsedUrl.hostname.endsWith(".youtube.com") ||
-              parsedUrl.hostname === "youtube.com" ||
-              parsedUrl.hostname.endsWith(".googlevideo.com") ||
-              parsedUrl.hostname === "googlevideo.com" ||
-              parsedUrl.hostname === "www.youtube.com")
-          ) {
-            subtitlesPromise = fetch(parsedUrl.toString())
-              .then((r) => r.text())
-              .then((capXml) => {
-                let subtitles = capXml.replace(/<[^>]*>/g, " ")
-                return decodeHtmlEntities(subtitles)
-              })
-              .catch((err) => {
-                console.warn(
-                  `[Neoblocker] Failed to fetch subtitles for ${videoId}:`,
-                  err
-                )
-                return ""
-              })
-          } else {
-            console.warn(
-              `[Neoblocker] Blocked untrusted subtitle URL: ${englishTrack.baseUrl}`
-            )
-          }
-        } catch (e) {
-          console.warn(
-            `[Neoblocker] Invalid subtitle URL format: ${englishTrack.baseUrl}`
-          )
-        }
-      }
-    }
-
-    // 3. Setup comments fetch promise (InnerTube API)
-    const apiKeyMatch = html.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/)
-    if (apiKeyMatch) {
-      const apiKey = apiKeyMatch[1]
-      // Bolt Optimization: We already have the raw JSON string `playerResponseJson`.
-      // Using it directly avoids an expensive `JSON.stringify(playerResponse)` on a large object.
-      const tokenMatch = playerResponseJson.match(/"token":"([^"]+)"/)
-      if (tokenMatch) {
-        const token = tokenMatch[1]
-        commentsPromise = fetch(
-          `https://www.youtube.com/youtubei/v1/next?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              context: {
-                client: { clientName: "WEB", clientVersion: "2.20240308.00.00" }
-              },
-              continuation: token
-            })
-          }
-        )
-          .then((r) => r.json())
-          .then((nextJson) => {
-            const commentList: string[] = []
-            const mutations =
-              nextJson.frameworkUpdates?.entityBatchUpdate?.mutations || []
-            for (const m of mutations) {
-              const content =
-                m.payload?.commentEntityPayload?.properties?.content?.content
-              if (content) commentList.push(content)
-            }
-            return commentList.join(" ")
-          })
-          .catch((err) => {
-            console.warn(
-              `[Neoblocker] Failed to fetch comments for ${videoId}:`,
-              err
-            )
-            return ""
-          })
-      }
-    }
-
-    // Await both subtitle and comment fetches in parallel
-    const [subtitles, comments] = await Promise.all([
-      subtitlesPromise,
-      commentsPromise
-    ])
-
-    // ── Backend optimisation: skip description when subtitles are present
-    // (subtitles have far richer signal). When absent, include only the first
-    // 300 chars of the description to keep token count low.
-    const descriptionSnippet = subtitles ? "" : description.slice(0, 300)
-
-    const deepText = [
-      author ? `Channel: ${author}` : "",
-      descriptionSnippet ? `Description: ${descriptionSnippet}` : "",
-      subtitles ? `Subtitles: ${subtitles}` : "",
-      comments ? `Comments: ${comments}` : ""
-    ]
-      .filter(Boolean)
-      .join("\n")
-
-    return { title, deepText }
-  } catch (err) {
-    console.error(`[Neoblocker] Error prefetching data for ${videoId}:`, err)
-    return { title: "", deepText: "" }
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
   }
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // ─── Analyze single text request (quick title/channel evaluation) ───────────
-  if (request.action === "analyze") {
-    const text: string = request.text
+async function fetchText(url: string, timeoutMs: number): Promise<string> {
+  const response = await fetchWithTimeout(
+    url,
+    {
+      credentials: "omit",
+      headers: { "Accept-Language": "en-US,en;q=0.9" }
+    },
+    timeoutMs
+  )
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const text = await response.text()
+  // Guard against unexpectedly large payloads.
+  if (text.length > 8_000_000) throw new Error("Response too large")
+  return text
+}
 
-    // Security Enhancement: Input validation & DoS protection
-    // Limit text length to prevent memory exhaustion or regular expression DoS attacks
-    if (typeof text !== "string" || text.length > 5000) {
-      console.warn(
-        "[Neoblocker] Analyze request rejected: invalid or too long text."
-      )
-      sendResponse({ action: "SAFE", error: "Invalid request payload" })
-      return false
-    }
+interface SubtitleTrack {
+  baseUrl?: string
+  languageCode?: string
+  kind?: string
+}
 
-    console.log(
-      `[Neoblocker] Analyze text request: "${text.substring(0, 50)}..."`
-    )
+async function extractSubtitleText(
+  playerResponse: any
+): Promise<string | null> {
+  const tracks: SubtitleTrack[] | undefined =
+    playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks
+  if (!Array.isArray(tracks) || tracks.length === 0) return null
 
-    getSettings()
-      .then((settings) => analyzeContent(text, settings, request.isTitle))
-      .then((result) => {
-        sendResponse(result)
-      })
-      .catch((err) => {
-        console.error("[Neoblocker] Analysis pipeline error:", err)
-        // Security Enhancement: Fail securely, don't expose stack traces/internals to content script
-        sendResponse({
-          action: "SAFE",
-          error: "Internal analysis error occurred"
-        })
-      })
+  const usable = tracks.filter(
+    (item) => item.baseUrl && isTrustedYouTubeUrl(item.baseUrl)
+  )
+  if (usable.length === 0) return null
 
-    return true // Indicate async response
-  }
+  const isEnglish = (item: SubtitleTrack) =>
+    /^en(?:-|$)/i.test(item.languageCode || "")
+  // Prefer manual English, then English auto-captions, then any manual
+  // track, then whatever is left. This avoids picking an unrelated
+  // auto-translated track when the video has English captions.
+  const track =
+    usable.find((item) => item.kind !== "asr" && isEnglish(item)) ||
+    usable.find(isEnglish) ||
+    usable.find((item) => item.kind !== "asr") ||
+    usable[0]
+  if (!track?.baseUrl) return null
 
-  // ─── Prefetch and Analyze YouTube video ID ─────────────────────────────────
-  if (request.action === "analyzeVideoId") {
-    const videoId: string = request.videoId
+  const url = new URL(track.baseUrl)
+  url.searchParams.set("fmt", "json3")
+  const body = await fetchText(url.toString(), SUBTITLE_FETCH_TIMEOUT)
+  const data = JSON.parse(body)
+  const events: Array<{ segs?: Array<{ utf8?: string }> }> =
+    data?.events || []
 
-    // Security Enhancement: Input validation to prevent potential SSRF or injection
-    // Ensure videoId strictly matches expected YouTube ID format (alphanumeric, hyphens, underscores, exactly 11 chars)
-    if (typeof videoId !== "string" || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-      console.warn(`[Neoblocker] Invalid videoId provided: ${videoId}`)
-      sendResponse({ action: "SAFE", error: "Invalid video ID format" })
-      return false
-    }
+  const text = events
+    .flatMap((event) => event.segs || [])
+    .map((segment) => segment.utf8 || "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
 
-    // Check cache first to avoid repeating network requests
-    if (!videoAnalysisCache.has(videoId)) {
-      console.log(
-        `[Neoblocker] Cache miss. Prefetching & analyzing video ID: ${videoId}`
-      )
+  return text || null
+}
 
-      const analysisPromise = fetchVideoData(videoId)
-        .then(async ({ title, deepText }) => {
-          if (!title && !deepText) return { action: "SAFE" as const }
-          const settings = await getSettings()
+function findContinuationToken(html: string): string | null {
+  const match = /"continuationCommand":\{"token":"([^"]+)"/.exec(html)
+  if (!match) return null
+  const token = match[1]
+  return isSafeContinuationToken(token) ? token : null
+}
 
-          // Pass One: The Title Scan
-          if (title) {
-            const titleResult = await analyzeContent(title, settings, true)
-            if (titleResult.action === "LOCAL_BLOCK") {
-              return titleResult
+function findInnerTubeKey(html: string): string | null {
+  const match = /"INNERTUBE_API_KEY":"([^"]+)"/.exec(html)
+  if (!match) return null
+  return isSafeInnerTubeKey(match[1]) ? match[1] : null
+}
+
+async function fetchComments(
+  html: string
+): Promise<string | null> {
+  const apiKey = findInnerTubeKey(html)
+  const token = findContinuationToken(html)
+  if (!apiKey || !token) return null
+
+  try {
+    const response = await fetchWithTimeout(
+      `https://www.youtube.com/youtubei/v1/next?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        credentials: "omit",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept-Language": "en-US,en;q=0.9"
+        },
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: "WEB",
+              clientVersion: "2.20240308.00.00"
             }
-          }
-
-          // Pass Two: The Deep Scan
-          if (deepText) {
-            return analyzeContent(deepText, settings, false)
-          }
-
-          return { action: "SAFE" as const }
+          },
+          continuation: token
         })
-        .catch((err) => {
-          console.error(
-            `[Neoblocker] Analysis failed for video ${videoId}:`,
-            err
-          )
-          // Allow retries if failed
-          videoAnalysisCache.delete(videoId)
-          return {
-            action: "SAFE" as const,
-            error: "Internal analysis error occurred"
-          }
-        })
+      },
+      COMMENTS_FETCH_TIMEOUT
+    )
+    if (!response.ok) return null
 
-      videoAnalysisCache.set(videoId, analysisPromise)
-    } else {
-      console.log(`[Neoblocker] Cache hit for video ID ${videoId}.`)
+    const data = await response.json()
+    const mutations =
+      data?.frameworkUpdates?.entityBatchUpdate?.mutations || []
+    const comments: string[] = []
+
+    for (const mutation of mutations) {
+      const content =
+        mutation?.payload?.commentEntityPayload?.properties?.content?.content
+      if (typeof content === "string") {
+        const clean = decodeHtmlEntities(content).replace(/\s+/g, " ").trim()
+        if (clean.length > 4) comments.push(clean)
+      }
+      if (comments.length >= 120) break
     }
 
-    videoAnalysisCache
-      .get(videoId)
-      ?.then((result) => {
-        sendResponse(result)
-      })
-      .catch((err) => {
-        // In theory, the catch block in the promise creation handles this,
-        // but catching here avoids unhandled rejection warnings just in case.
-        console.error(`[Neoblocker] Cached promise failed for ${videoId}:`, err)
-        sendResponse({
-          action: "SAFE",
-          error: "Internal analysis error occurred"
-        })
-      })
+    return comments.length ? sampleText(comments.join(" "), 5000) : null
+  } catch (error) {
+    console.warn("[Neoblocker] Comment fetch failed:", error)
+    return null
+  }
+}
 
-    return true // Indicate async response
+interface VideoData {
+  text: string
+  title: string
+}
+
+async function fetchVideoData(videoId: string): Promise<VideoData> {
+  const url = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`
+  const html = await fetchText(url, WATCH_FETCH_TIMEOUT)
+
+  const playerJson = extractJsonBlock(html, "ytInitialPlayerResponse")
+  let playerResponse: any = {}
+  if (playerJson) {
+    try {
+      playerResponse = JSON.parse(playerJson)
+    } catch {
+      playerResponse = {}
+    }
   }
 
-  // ─── Model status query (from popup) ────────────────────────────────────────
-  if (request.action === "getModelStatus") {
-    sendResponse(getModelStatuses())
-    return false
+  const details = playerResponse?.videoDetails || {}
+  const title =
+    typeof details.title === "string" ? details.title.trim() : "Unknown Title"
+  const channel =
+    typeof details.author === "string" ? details.author.trim() : "Unknown"
+  const description =
+    typeof details.shortDescription === "string"
+      ? details.shortDescription.slice(0, 600)
+      : ""
+
+  let subtitleText: string | null = null
+  try {
+    subtitleText = await extractSubtitleText(playerResponse)
+  } catch (error) {
+    console.warn("[Neoblocker] Subtitle fetch failed:", error)
   }
+
+  const commentText = await fetchComments(html)
+
+  const sections: string[] = []
+  if (title && title !== "Unknown Title") sections.push(`Title: ${title}`)
+  sections.push(`Channel: ${channel}`)
+  if (description) sections.push(`Description: ${description}`)
+  if (subtitleText) sections.push(`Subtitles: ${sampleText(subtitleText, 5000)}`)
+  if (commentText) sections.push(`Comments: ${commentText}`)
+
+  return { text: sections.join("\n"), title }
+}
+
+async function analyzeVideoId(videoId: string) {
+  const settings = await getSettings()
+  if (!settings.enabled || !settings.deepScan || !settings.enableToxicity) {
+    return { action: "SAFE" as const }
+  }
+
+  const cached = getCached(videoId)
+  if (cached) return cached
+
+  const analysis = (async () => {
+    try {
+      const { text } = await fetchVideoData(videoId)
+      if (!text || text.length < 12) return { action: "SAFE" as const }
+      const result = await analyzeContent(text, settings, false)
+      if (result.error) {
+        // Do not memoise transient failures.
+        videoAnalysisCache.delete(videoId)
+      }
+      return result
+    } catch (error) {
+      console.warn("[Neoblocker] Video analysis failed:", error)
+      // A network/parse failure must not be memoised as a SAFE verdict.
+      videoAnalysisCache.delete(videoId)
+      return { action: "SAFE" as const, error: "Video analysis failed" }
+    }
+  })()
+
+  setCached(videoId, analysis)
+  return analysis
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Badge + stats
+// ─────────────────────────────────────────────────────────────────────────────
+async function refreshBadge() {
+  if (!chrome.action?.setBadgeText) return
+  try {
+    const stats = await getStats()
+    const count = stats.date === todayKey() ? stats.total : 0
+    await chrome.action.setBadgeBackgroundColor({ color: "#7c3aed" })
+    await chrome.action.setBadgeText({
+      text: count > 0 ? String(Math.min(count, 999)) : ""
+    })
+  } catch {
+    // Badge updates are cosmetic; never let them crash the worker.
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Message handling
+// ─────────────────────────────────────────────────────────────────────────────
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+async function handleMessage(message: unknown) {
+  if (!isRecord(message) || typeof message.action !== "string") {
+    return { error: "Invalid message" }
+  }
+
+  switch (message.action) {
+    case "analyze": {
+      if (typeof message.text !== "string") {
+        return { action: "SAFE", error: "Invalid text" }
+      }
+      const settings = await getSettings()
+      if (!settings.enabled) return { action: "SAFE" }
+      return analyzeContent(
+        message.text.slice(0, 5000),
+        settings,
+        message.isTitle === true
+      )
+    }
+
+    case "analyzeVideoId": {
+      if (!isValidVideoId(message.videoId)) {
+        return { action: "SAFE", error: "Invalid video ID" }
+      }
+      return analyzeVideoId(message.videoId)
+    }
+
+    case "getModelStatus":
+      return { statuses: getModelStatuses() }
+
+    case "warmupModels": {
+      const settings = await getSettings()
+      return { statuses: await warmupModels(settings) }
+    }
+
+    case "applySettings": {
+      const settings = await getSettings()
+      applyModelSettings(settings)
+      return { ok: true }
+    }
+
+    case "recordBlock": {
+      const count =
+        typeof message.count === "number" && Number.isFinite(message.count)
+          ? Math.min(10, Math.max(1, Math.floor(message.count)))
+          : 1
+      await addBlockedCount(count)
+      await refreshBadge()
+      return { ok: true }
+    }
+
+    case "refreshBadge":
+      await refreshBadge()
+      return { ok: true }
+
+    default:
+      return { error: "Unknown action" }
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  handleMessage(message)
+    .then(sendResponse)
+    .catch((error) => {
+      console.error("[Neoblocker] Message handler failed:", error)
+      sendResponse({ action: "SAFE", error: "Internal error" })
+    })
+  return true
 })
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return
+
+  if (changes[STATS_KEY]) {
+    void getSettings()
+      .then((settings) => {
+        if (!settings.enabled) {
+          void chrome.action?.setBadgeText?.({ text: "" })
+          return
+        }
+        return refreshBadge()
+      })
+      .catch((error) => console.warn("[Neoblocker] Badge update failed:", error))
+  }
+
+  if (!changes.neoblocker_settings) return
+  // Deep-scan results depend on thresholds and enabled models; never serve a
+  // result produced under the previous configuration.
+  videoAnalysisCache.clear()
+  void getSettings()
+    .then((settings) => {
+      applyModelSettings(settings)
+      if (!settings.enabled) {
+        try {
+          void chrome.action?.setBadgeText?.({ text: "" })
+        } catch {
+          // Badge updates are cosmetic.
+        }
+        return
+      }
+      return refreshBadge()
+    })
+    .catch((error) => console.warn("[Neoblocker] Settings update failed:", error))
+})
+
+chrome.runtime.onInstalled.addListener(() => {
+  void getSettings()
+  void refreshBadge()
+})
+
+chrome.runtime.onStartup.addListener(() => {
+  void getSettings()
+  void refreshBadge()
+})
+
+void refreshBadge()

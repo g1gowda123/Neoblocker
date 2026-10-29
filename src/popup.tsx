@@ -1,418 +1,631 @@
-import { useEffect, useState } from "react"
-import extensionIcon from "url:../assets/icon.png"
-
-import type { ModelStatuses } from "~utils/ai-router"
-import { getSettings, saveSettings } from "~utils/storage"
+import { useCallback, useEffect, useRef, useState } from "react"
+import type { CSSProperties } from "react"
 
 import "~style.css"
+import {
+  getSettings,
+  getStats,
+  resetSettings,
+  resetStats,
+  saveSettings
+} from "~utils/storage"
+import type { ExtensionSettings, FilterStats } from "~utils/storage"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-type ModelStatus = "idle" | "loading" | "loaded" | "error"
+type ModelState = "idle" | "loading" | "loaded" | "error"
 
-// ─── Main Popup ───────────────────────────────────────────────────────────────
-function IndexPopup() {
-  const [enableToxicity, setEnableToxicity] = useState(true)
-  const [enableBias, setEnableBias] = useState(true)
-  const [toxicityThreshold, setToxicityThreshold] = useState(0.5)
-  const [biasThreshold, setBiasThreshold] = useState(0.5)
-  const [racismThreshold, setRacismThreshold] = useState(0.25)
-  const [exceptions, setExceptions] = useState("")
-  const [enableObscene, setEnableObscene] = useState(true)
-  const [filterMode, setFilterMode] = useState<"blur" | "remove">("blur")
-  const [bannedKeywords, setBannedKeywords] = useState("")
-  const [theme, setTheme] = useState<"dark" | "light">("dark")
-  const [statuses, setStatuses] = useState<ModelStatuses>({
-    toxicity: "idle",
-    bias: "idle"
-  })
-  const [loaded, setLoaded] = useState(false)
+interface ModelStatuses {
+  toxicity: ModelState
+  bias: ModelState
+  progress: { toxicity: number; bias: number }
+}
 
-  useEffect(() => {
-    getSettings().then((s) => {
-      setEnableToxicity(s.enableToxicity)
-      setEnableBias(s.enableBias)
-      setToxicityThreshold(s.toxicityThreshold)
-      setBiasThreshold(s.biasThreshold)
-      setRacismThreshold(s.racismThreshold ?? 0.25)
-      setTheme(s.theme || "dark")
-      setExceptions(s.exceptions || "")
-      setEnableObscene(s.enableObscene ?? true)
-      setFilterMode(s.filterMode || "blur")
-      setBannedKeywords(s.bannedKeywords || "")
-      setLoaded(true)
-    })
+const EMPTY_STATUSES: ModelStatuses = {
+  toxicity: "idle",
+  bias: "idle",
+  progress: { toxicity: 0, bias: 0 }
+}
 
-    chrome.runtime
-      .sendMessage({ action: "getModelStatus" })
-      .then((res) => {
-        if (res) setStatuses(res)
-      })
-      .catch(() => {})
-
-    const listener = (msg: { action: string; statuses?: ModelStatuses }) => {
-      if (msg.action === "modelStatus" && msg.statuses) {
-        setStatuses(msg.statuses)
-      }
-    }
-    chrome.runtime.onMessage.addListener(listener)
-    return () => chrome.runtime.onMessage.removeListener(listener)
-  }, [])
-
-  useEffect(() => {
-    if (loaded) {
-      // Chromium native background colors
-      const bg = theme === "dark" ? "#202124" : "#ffffff"
-      document.documentElement.style.backgroundColor = bg
-      document.body.style.backgroundColor = bg
-    }
-  }, [theme, loaded])
-
-  const handleToxicityToggle = (val: boolean) => {
-    setEnableToxicity(val)
-    saveSettings({ enableToxicity: val })
-  }
-
-  const handleBiasToggle = (val: boolean) => {
-    setEnableBias(val)
-    saveSettings({ enableBias: val })
-  }
-
-  const handleToxicityThresholdChange = (val: number) => {
-    setToxicityThreshold(val)
-    saveSettings({ toxicityThreshold: val })
-  }
-
-  const handleBiasThresholdChange = (val: number) => {
-    setBiasThreshold(val)
-    saveSettings({ biasThreshold: val })
-  }
-
-  const handleRacismThresholdChange = (val: number) => {
-    setRacismThreshold(val)
-    saveSettings({ racismThreshold: val })
-  }
-
-  const handleExceptionsChange = (val: string) => {
-    setExceptions(val)
-    saveSettings({ exceptions: val })
-  }
-
-  const handleObsceneToggle = (val: boolean) => {
-    setEnableObscene(val)
-    saveSettings({ enableObscene: val })
-  }
-
-  const handleThemeToggle = () => {
-    const nextTheme = theme === "dark" ? "light" : "dark"
-    setTheme(nextTheme)
-    saveSettings({ theme: nextTheme })
-  }
-
-  const handleFilterModeToggle = () => {
-    const next = filterMode === "blur" ? "remove" : "blur"
-    setFilterMode(next)
-    saveSettings({ filterMode: next })
-  }
-
-  const handleBannedKeywordsChange = (val: string) => {
-    setBannedKeywords(val)
-    saveSettings({ bannedKeywords: val })
-  }
-
-  if (!loaded) {
-    return (
-      <div className="plasmo-w-[360px] plasmo-h-[400px] plasmo-bg-[#202124] plasmo-flex plasmo-items-center plasmo-justify-center">
-        <div className="plasmo-w-8 plasmo-h-8 plasmo-rounded-full plasmo-border-[3px] plasmo-border-[#8ab4f8] plasmo-border-t-transparent plasmo-animate-spin" />
-      </div>
-    )
-  }
-
-  // Chromium native design tokens
-  const isDark = theme === "dark"
-  const bgColor = isDark ? "plasmo-bg-[#202124]" : "plasmo-bg-white"
-  const cardBg = isDark ? "plasmo-bg-[#292a2d]" : "plasmo-bg-[#f1f3f4]"
-  const textColor = isDark ? "plasmo-text-[#e8eaed]" : "plasmo-text-[#202124]"
-  const secTextColor = isDark
-    ? "plasmo-text-[#9aa0a6]"
-    : "plasmo-text-[#5f6368]"
-  const borderColor = isDark
-    ? "plasmo-border-[#3c4043]"
-    : "plasmo-border-[#dadce0]"
-
-  // Classic Chromium Blue
-  const activeSwitchBg = isDark ? "plasmo-bg-[#8ab4f8]" : "plasmo-bg-[#1a73e8]"
-  const inactiveSwitchBg = isDark
-    ? "plasmo-bg-[#5f6368]"
-    : "plasmo-bg-[#e8eaed]"
-
-  // Chrome handles toggle thumbs differently in dark mode
-  const activeDot = isDark ? "plasmo-bg-[#202124]" : "plasmo-bg-white"
-  const inactiveDot = isDark ? "plasmo-bg-[#dadce0]" : "plasmo-bg-white"
-
-  const sliderAccent = isDark ? "accent-[#8ab4f8]" : "accent-[#1a73e8]"
-
-  const isModelLoading =
-    statuses.toxicity === "loading" || statuses.bias === "loading"
-
+function Switch({
+  checked,
+  onChange,
+  label,
+  disabled = false
+}: {
+  checked: boolean
+  onChange: (value: boolean) => void
+  label: string
+  disabled?: boolean
+}) {
   return (
-    <div
-      className={`plasmo-w-[360px] ${bgColor} ${textColor} plasmo-font-sans plasmo-select-none plasmo-transition-colors plasmo-duration-300 plasmo-p-5 plasmo-rounded-[16px] plasmo-shadow-lg plasmo-overflow-hidden`}>
-      {/* Header */}
-      <div className="plasmo-flex plasmo-items-center plasmo-justify-between plasmo-pb-4 plasmo-border-b border-inherit">
-        <div className="plasmo-flex plasmo-items-center plasmo-gap-3">
-          <img
-            src={extensionIcon}
-            className="plasmo-w-7 plasmo-h-7 plasmo-rounded-md"
-            alt="Neoblocker Logo"
-          />
-          <div className="plasmo-flex plasmo-flex-col">
-            <div className="plasmo-flex plasmo-items-center plasmo-gap-2">
-              <span className="plasmo-text-lg plasmo-font-medium plasmo-tracking-tight">
-                Neoblocker
-              </span>
-              {isModelLoading && (
-                <span
-                  className={`plasmo-w-2 plasmo-h-2 plasmo-rounded-full ${isDark ? "plasmo-bg-[#8ab4f8]" : "plasmo-bg-[#1a73e8]"} plasmo-animate-pulse`}
-                  title="Model is loading..."
-                />
-              )}
-            </div>
-          </div>
-        </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={`nb-switch${checked ? " is-on" : ""}`}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    />
+  )
+}
 
-        {/* Theme Toggle */}
-        <button
-          onClick={handleThemeToggle}
-          className={`plasmo-p-2 plasmo-rounded-full plasmo-transition-all plasmo-duration-200 ${isDark ? "hover:plasmo-bg-[#3c4043] text-[#9aa0a6] hover:text-[#e8eaed]" : "hover:plasmo-bg-[#e8eaed] text-[#5f6368] hover:text-[#202124]"}`}
-          title="Toggle Theme">
-          {isDark ? (
-            <svg
-              className="plasmo-w-5 plasmo-h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z"
-              />
-            </svg>
-          ) : (
-            <svg
-              className="plasmo-w-5 plasmo-h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-              />
-            </svg>
-          )}
-        </button>
+function Slider({
+  label,
+  hint,
+  value,
+  disabled,
+  onChange
+}: {
+  label: string
+  hint: string
+  value: number
+  disabled: boolean
+  onChange: (value: number) => void
+}) {
+  const percent = Math.round(value * 100)
+  return (
+    <div className={`nb-slider-row${disabled ? " nb-disabled" : ""}`}>
+      <div className="nb-slider-head">
+        <span className="nb-row-label">{label}</span>
+        <span className="nb-slider-value">≥ {percent}%</span>
       </div>
-
-      {/* Main Settings List */}
-      <div className="plasmo-mt-5 plasmo-space-y-4">
-        {/* Toxicity Section Group */}
-        <div
-          className={`${cardBg} plasmo-p-4 plasmo-rounded-[12px] ${borderColor} plasmo-border plasmo-transition-colors plasmo-duration-300`}>
-          <div className="plasmo-flex plasmo-items-center plasmo-justify-between">
-            <span className="plasmo-text-sm plasmo-font-medium">
-              Toxicity Shield
-            </span>
-            <button
-              onClick={() => handleToxicityToggle(!enableToxicity)}
-              className={`plasmo-relative plasmo-inline-flex plasmo-h-[22px] plasmo-w-10 plasmo-items-center plasmo-rounded-full plasmo-transition-colors plasmo-duration-300 plasmo-shrink-0 ${enableToxicity ? activeSwitchBg : inactiveSwitchBg}`}>
-              <span
-                className={`plasmo-absolute plasmo-h-4 plasmo-w-4 plasmo-rounded-full plasmo-shadow-sm plasmo-transition-all plasmo-duration-300 plasmo-top-[3px] ${enableToxicity ? `plasmo-right-[3px] ${activeDot}` : `plasmo-left-[3px] ${inactiveDot}`}`}
-              />
-            </button>
-          </div>
-
-          {enableToxicity && (
-            <div className="plasmo-space-y-5 plasmo-mt-4 plasmo-pt-4 plasmo-border-t border-inherit">
-              {/* General Toxicity Limit Slider — inverted: right = more sensitive = lower threshold */}
-              <div className="plasmo-space-y-2">
-                <div className="plasmo-flex plasmo-items-center plasmo-justify-between plasmo-text-xs">
-                  <span className={secTextColor}>
-                    General Toxicity Sensitivity
-                  </span>
-                  <span className="plasmo-font-medium plasmo-font-mono">
-                    {(1.0 - toxicityThreshold).toFixed(2)}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0.1"
-                  max="0.9"
-                  step="0.05"
-                  value={1.0 - toxicityThreshold}
-                  onChange={(e) =>
-                    handleToxicityThresholdChange(
-                      parseFloat((1.0 - parseFloat(e.target.value)).toFixed(2))
-                    )
-                  }
-                  className={`plasmo-w-full plasmo-h-1 plasmo-bg-[#dadce0] dark:plasmo-bg-[#3c4043] plasmo-rounded-lg plasmo-appearance-none plasmo-cursor-pointer ${sliderAccent} plasmo-outline-none`}
-                />
-              </div>
-
-              {/* Racism & Hate Speech Slider — inverted: right = more sensitive = lower threshold */}
-              <div className="plasmo-space-y-2">
-                <div className="plasmo-flex plasmo-items-center plasmo-justify-between plasmo-text-xs">
-                  <span className={secTextColor}>
-                    Racism & Hate Speech Sensitivity
-                  </span>
-                  <span className="plasmo-font-medium plasmo-font-mono">
-                    {(1.05 - racismThreshold).toFixed(2)}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0.05"
-                  max="1.00"
-                  step="0.05"
-                  value={1.05 - racismThreshold}
-                  onChange={(e) =>
-                    handleRacismThresholdChange(
-                      parseFloat((1.05 - parseFloat(e.target.value)).toFixed(2))
-                    )
-                  }
-                  className={`plasmo-w-full plasmo-h-1 plasmo-bg-[#dadce0] dark:plasmo-bg-[#3c4043] plasmo-rounded-lg plasmo-appearance-none plasmo-cursor-pointer ${sliderAccent} plasmo-outline-none`}
-                />
-              </div>
-
-              {/* Obscene toggle switch */}
-              <div className="plasmo-flex plasmo-items-center plasmo-justify-between">
-                <span className={`plasmo-text-xs ${secTextColor}`}>
-                  Obscene Language Filter
-                </span>
-                <button
-                  onClick={() => handleObsceneToggle(!enableObscene)}
-                  className={`plasmo-relative plasmo-inline-flex plasmo-h-[18px] plasmo-w-8 plasmo-items-center plasmo-rounded-full plasmo-transition-colors plasmo-duration-300 plasmo-shrink-0 ${enableObscene ? activeSwitchBg : inactiveSwitchBg}`}>
-                  <span
-                    className={`plasmo-absolute plasmo-h-3.5 plasmo-w-3.5 plasmo-rounded-full plasmo-shadow-sm plasmo-transition-all plasmo-duration-300 plasmo-top-[2px] ${enableObscene ? `plasmo-right-[2px] ${activeDot}` : `plasmo-left-[2px] ${inactiveDot}`}`}
-                  />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Bias Section Group */}
-        <div
-          className={`${cardBg} plasmo-p-4 plasmo-rounded-[12px] ${borderColor} plasmo-border plasmo-transition-colors plasmo-duration-300`}>
-          <div className="plasmo-flex plasmo-items-center plasmo-justify-between">
-            <span className="plasmo-text-sm plasmo-font-medium">
-              Bias & Clickbait Filter
-            </span>
-            <button
-              onClick={() => handleBiasToggle(!enableBias)}
-              className={`plasmo-relative plasmo-inline-flex plasmo-h-[22px] plasmo-w-10 plasmo-items-center plasmo-rounded-full plasmo-transition-colors plasmo-duration-300 plasmo-shrink-0 ${enableBias ? activeSwitchBg : inactiveSwitchBg}`}>
-              <span
-                className={`plasmo-absolute plasmo-h-4 plasmo-w-4 plasmo-rounded-full plasmo-shadow-sm plasmo-transition-all plasmo-duration-300 plasmo-top-[3px] ${enableBias ? `plasmo-right-[3px] ${activeDot}` : `plasmo-left-[3px] ${inactiveDot}`}`}
-              />
-            </button>
-          </div>
-
-          {enableBias && (
-            <div className="plasmo-space-y-2 plasmo-mt-4 plasmo-pt-4 plasmo-border-t border-inherit">
-              <div className="plasmo-flex plasmo-items-center plasmo-justify-between plasmo-text-xs">
-                <span className={secTextColor}>Sensitivity</span>
-                <span className="plasmo-font-medium plasmo-font-mono">
-                  {(1.0 - biasThreshold).toFixed(2)}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="0.9"
-                step="0.05"
-                value={1.0 - biasThreshold}
-                onChange={(e) =>
-                  handleBiasThresholdChange(
-                    parseFloat((1.0 - parseFloat(e.target.value)).toFixed(2))
-                  )
-                }
-                className={`plasmo-w-full plasmo-h-1 plasmo-bg-[#dadce0] dark:plasmo-bg-[#3c4043] plasmo-rounded-lg plasmo-appearance-none plasmo-cursor-pointer ${sliderAccent} plasmo-outline-none`}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Filter Mode Row */}
-        <div
-          className={`${cardBg} plasmo-p-4 plasmo-rounded-[12px] ${borderColor} plasmo-border plasmo-transition-colors plasmo-duration-300`}>
-          <div className="plasmo-flex plasmo-items-center plasmo-justify-between">
-            <div className="plasmo-flex plasmo-flex-col plasmo-gap-0.5">
-              <span className="plasmo-text-sm plasmo-font-medium">
-                Remove Mode
-              </span>
-              <span className={`plasmo-text-[11px] ${secTextColor}`}>
-                Remove filtered content
-              </span>
-            </div>
-            <button
-              onClick={handleFilterModeToggle}
-              className={`plasmo-relative plasmo-inline-flex plasmo-h-[22px] plasmo-w-10 plasmo-items-center plasmo-rounded-full plasmo-transition-colors plasmo-duration-300 plasmo-shrink-0 ${filterMode === "remove" ? activeSwitchBg : inactiveSwitchBg}`}>
-              <span
-                className={`plasmo-absolute plasmo-h-4 plasmo-w-4 plasmo-rounded-full plasmo-shadow-sm plasmo-transition-all plasmo-duration-300 plasmo-top-[3px] ${filterMode === "remove" ? `plasmo-right-[3px] ${activeDot}` : `plasmo-left-[3px] ${inactiveDot}`}`}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* Bypass Keywords Row */}
-        <div className="plasmo-space-y-2.5 plasmo-px-1">
-          <div className="plasmo-flex plasmo-flex-col plasmo-gap-1">
-            <span className="plasmo-text-sm plasmo-font-medium">
-              Bypass Keywords
-            </span>
-            <span className={`plasmo-text-[11px] ${secTextColor}`}>
-              Always allow matching titles, creators or topics (comma-separated)
-            </span>
-          </div>
-          <input
-            type="text"
-            value={exceptions}
-            placeholder="e.g. mrbeast, nvidia, ludwig"
-            onChange={(e) => handleExceptionsChange(e.target.value)}
-            className={`plasmo-w-full plasmo-text-sm plasmo-px-3.5 plasmo-py-2.5 plasmo-rounded-lg plasmo-border plasmo-outline-none plasmo-transition-all plasmo-duration-200 ${
-              isDark
-                ? "plasmo-bg-[#202124] plasmo-border-[#3c4043] plasmo-text-[#e8eaed] focus:plasmo-border-[#8ab4f8]"
-                : "plasmo-bg-[#ffffff] plasmo-border-[#dadce0] plasmo-text-[#202124] focus:plasmo-border-[#1a73e8]"
-            }`}
-          />
-        </div>
-
-        {/* Banned Keywords Row */}
-        <div className="plasmo-space-y-2.5 plasmo-px-1 plasmo-mt-4">
-          <div className="plasmo-flex plasmo-flex-col plasmo-gap-1">
-            <span className="plasmo-text-sm plasmo-font-medium">
-              Banned Keywords
-            </span>
-            <span className={`plasmo-text-[11px] ${secTextColor}`}>
-              Block/hide matching titles, creators or topics (comma-separated)
-            </span>
-          </div>
-          <input
-            type="text"
-            value={bannedKeywords}
-            placeholder="e.g. copilot, spoiler, reaction"
-            onChange={(e) => handleBannedKeywordsChange(e.target.value)}
-            className={`plasmo-w-full plasmo-text-sm plasmo-px-3.5 plasmo-py-2.5 plasmo-rounded-lg plasmo-border plasmo-outline-none plasmo-transition-all plasmo-duration-200 ${
-              isDark
-                ? "plasmo-bg-[#202124] plasmo-border-[#3c4043] plasmo-text-[#e8eaed] focus:plasmo-border-[#8ab4f8]"
-                : "plasmo-bg-[#ffffff] plasmo-border-[#dadce0] plasmo-text-[#202124] focus:plasmo-border-[#1a73e8]"
-            }`}
-          />
-        </div>
-      </div>
+      <input
+        className="nb-slider"
+        type="range"
+        min={5}
+        max={95}
+        step={1}
+        value={percent}
+        disabled={disabled}
+        aria-label={label}
+        style={{ "--fill": `${((percent - 5) / 90) * 100}%` } as CSSProperties}
+        onChange={(event) => onChange(Number(event.target.value) / 100)}
+      />
+      <p className="nb-hint">{hint}</p>
     </div>
   )
 }
 
-export default IndexPopup
+function statusBadge(state: ModelState, progress: number) {
+  switch (state) {
+    case "loaded":
+      return <span className="nb-badge is-ready">Ready</span>
+    case "loading":
+      return (
+        <span className="nb-badge is-loading">
+          {progress > 0 ? `${Math.round(progress * 100)}%` : "Loading"}
+        </span>
+      )
+    case "error":
+      return <span className="nb-badge is-error">Error</span>
+    default:
+      return <span className="nb-badge is-idle">Not loaded</span>
+  }
+}
+
+function Popup() {
+  const [settings, setSettings] = useState<ExtensionSettings | null>(null)
+  const [stats, setStats] = useState<FilterStats>({ date: "", total: 0 })
+  const [statuses, setStatuses] = useState<ModelStatuses>(EMPTY_STATUSES)
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle")
+  const [toast, setToast] = useState("")
+  const [preloading, setPreloading] = useState(false)
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveStateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pending = useRef<Partial<ExtensionSettings>>({})
+
+  const showToast = useCallback((message: string) => {
+    setToast(message)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(""), 2600)
+  }, [])
+
+  const flush = useCallback(async () => {
+    const patch = pending.current
+    pending.current = {}
+    if (Object.keys(patch).length === 0) return
+    setSaveState("saving")
+    try {
+      await saveSettings(patch)
+      setSaveState("saved")
+      if (saveStateTimer.current) clearTimeout(saveStateTimer.current)
+      saveStateTimer.current = setTimeout(() => setSaveState("idle"), 1500)
+    } catch {
+      setSaveState("idle")
+      showToast("Could not save settings. Try again.")
+    }
+  }, [showToast])
+
+  const update = useCallback(
+    (patch: Partial<ExtensionSettings>, immediate = true) => {
+      setSettings((previous) => (previous ? { ...previous, ...patch } : previous))
+      pending.current = { ...pending.current, ...patch }
+      setSaveState("saving")
+
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      if (immediate) {
+        void flush()
+      } else {
+        saveTimer.current = setTimeout(() => void flush(), 450)
+      }
+    },
+    [flush]
+  )
+
+  useEffect(() => {
+    void getSettings().then(setSettings)
+    void getStats().then(setStats)
+
+    try {
+      chrome.runtime.sendMessage({ action: "getModelStatus" }, (response) => {
+        if (!chrome.runtime?.lastError && response?.statuses) {
+          setStatuses(response.statuses)
+        }
+      })
+    } catch {
+      // Popup preview outside an extension context.
+    }
+
+    const onMessage = (message: any) => {
+      if (message?.action === "modelStatus" && message.statuses) {
+        setStatuses(message.statuses)
+        setPreloading(false)
+      }
+    }
+
+    const onStorage = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      if (areaName !== "local") return
+      if (changes.neoblocker_settings) void getSettings().then(setSettings)
+      if (changes.neoblocker_stats) void getStats().then(setStats)
+    }
+
+    // Popups are torn down without a React unmount, so save pending text
+    // (keyword lists) on pagehide as well as in the effect cleanup.
+    const flushOnClose = () => {
+      if (Object.keys(pending.current).length > 0) {
+        void saveSettings(pending.current)
+      }
+    }
+
+    chrome.runtime.onMessage.addListener(onMessage)
+    chrome.storage.onChanged.addListener(onStorage)
+    window.addEventListener("pagehide", flushOnClose)
+
+    return () => {
+      chrome.runtime.onMessage.removeListener(onMessage)
+      chrome.storage.onChanged.removeListener(onStorage)
+      window.removeEventListener("pagehide", flushOnClose)
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      if (toastTimer.current) clearTimeout(toastTimer.current)
+      if (saveStateTimer.current) clearTimeout(saveStateTimer.current)
+      flushOnClose()
+    }
+  }, [])
+
+  const preload = () => {
+    if (statuses.toxicity === "loaded" && statuses.bias === "loaded") {
+      showToast("Models are already loaded.")
+      return
+    }
+    setPreloading(true)
+    showToast("Downloading models — this can take a few minutes.")
+    try {
+      chrome.runtime.sendMessage({ action: "warmupModels" }, (response) => {
+        if (chrome.runtime?.lastError) {
+          showToast("Could not load the models. Check your connection.")
+        } else if (response?.statuses) {
+          setStatuses(response.statuses)
+        }
+        setPreloading(false)
+      })
+    } catch {
+      setPreloading(false)
+      showToast("Could not reach the extension background worker.")
+    }
+  }
+
+  const openReadme = () => {
+    try {
+      chrome.tabs.create({
+        url: "https://github.com/g1gowda123/Neoblocker#readme"
+      })
+    } catch {
+      showToast("Open the README from the extension's GitHub page.")
+    }
+  }
+
+  const restorePage = () => {
+    try {
+      chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+        if (!tab?.id) {
+          showToast("Open a YouTube tab first.")
+          return
+        }
+        chrome.tabs.sendMessage(tab.id, { action: "resetPage" }, () => {
+          if (chrome.runtime?.lastError) {
+            showToast("Reload the YouTube page to reconnect.")
+          } else {
+            showToast("Hidden items restored.")
+          }
+        })
+      })
+    } catch {
+      showToast("Open a YouTube tab first.")
+    }
+  }
+
+  const doResetSettings = async () => {
+    if (!window.confirm("Reset all Neoblocker settings to their defaults?")) return
+    // Drop any debounced edits so they cannot overwrite the defaults.
+    pending.current = {}
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    try {
+      const next = await resetSettings()
+      setSettings(next)
+      showToast("Settings reset to defaults.")
+    } catch {
+      showToast("Could not reset settings. Try again.")
+    }
+  }
+
+  const doResetStats = async () => {
+    if (!window.confirm("Clear today's filtered count?")) return
+    try {
+      await resetStats()
+      setStats({ date: "", total: 0 })
+      showToast("Counter reset.")
+    } catch {
+      showToast("Could not reset the counter. Try again.")
+    }
+  }
+
+  if (!settings) {
+    return (
+      <main className="nb-app" data-theme="dark">
+        <div className="nb-header">
+          <div className="nb-logo">🛡️</div>
+          <div>
+            <h1 className="nb-title">Neoblocker</h1>
+            <p className="nb-subtitle">Local AI content filter</p>
+          </div>
+        </div>
+        <div className="nb-section">
+          <p className="nb-hint">Loading settings…</p>
+        </div>
+      </main>
+    )
+  }
+
+  const version = (() => {
+    try {
+      return chrome.runtime.getManifest().version
+    } catch {
+      return "1.1.0"
+    }
+  })()
+
+  const active = settings.enabled
+  const modelsBusy =
+    statuses.toxicity === "loading" || statuses.bias === "loading"
+
+  return (
+    <main className="nb-app" data-theme={settings.theme}>
+      <header className="nb-header">
+        <div className="nb-logo" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M12 2.5 20 6v5.4c0 5-3.4 8.7-8 10.1-4.6-1.4-8-5.1-8-10.1V6l8-3.5Z"
+              fill="#f5f3ff"
+              stroke="#ddd6fe"
+              strokeWidth="1"
+            />
+            <path
+              d="M9.2 12.1l1.9 1.9 3.9-4"
+              stroke="#6d28d9"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+        <div>
+          <h1 className="nb-title">Neoblocker</h1>
+          <p className="nb-subtitle">Local AI content filter for YouTube</p>
+        </div>
+        <div className="nb-header-actions">
+          <button
+            type="button"
+            className="nb-icon-button"
+            title="Toggle theme"
+            aria-label="Toggle light or dark theme"
+            onClick={() =>
+              update({ theme: settings.theme === "dark" ? "light" : "dark" })
+            }>
+            {settings.theme === "dark" ? "☀" : "☾"}
+          </button>
+          <button
+            type="button"
+            className="nb-icon-button"
+            title="Help & privacy"
+            aria-label="Open the README"
+            onClick={openReadme}>
+            ?
+          </button>
+        </div>
+      </header>
+
+      <div className="nb-stats">
+        <div className="nb-stat">
+          <div className="nb-stat-value">{stats.total}</div>
+          <div className="nb-stat-label">Filtered today</div>
+        </div>
+        <div className="nb-stat">
+          <div className="nb-stat-value" style={{ textTransform: "capitalize" }}>
+            {settings.filterMode === "remove" ? "Hide" : "Blur"}
+          </div>
+          <div className="nb-stat-label">
+            {settings.deepScan ? "Deep scan on" : "Page only"}
+          </div>
+        </div>
+      </div>
+
+      <section className="nb-section">
+        <div className="nb-row" style={{ paddingTop: 2 }}>
+          <div className="nb-row-text">
+            <div className="nb-row-label">Protection</div>
+            <div className="nb-row-hint">
+              {active ? "Applies to every YouTube tab" : "Paused — nothing is filtered"}
+            </div>
+          </div>
+          <Switch
+            checked={settings.enabled}
+            label="Enable Neoblocker"
+            onChange={(value) => update({ enabled: value })}
+          />
+        </div>
+      </section>
+
+      <div className={active ? "" : "nb-disabled"}>
+        <section className="nb-section">
+          <div className="nb-section-head">
+            <h2 className="nb-section-title">Detection</h2>
+            <span className="nb-save-note is-visible" style={{ opacity: saveState === "idle" ? 0 : 1 }}>
+              {saveState === "saving" ? "Saving…" : "Saved"}
+            </span>
+          </div>
+
+          <div className="nb-row">
+            <div className="nb-row-text">
+              <div className="nb-row-label">Toxicity &amp; hate speech</div>
+              <div className="nb-row-hint">Threats, harassment, explicit abuse</div>
+            </div>
+            <Switch
+              checked={settings.enableToxicity}
+              label="Toxicity filtering"
+              onChange={(value) => update({ enableToxicity: value })}
+            />
+          </div>
+          <Slider
+            label="Toxicity threshold"
+            hint="Minimum confidence needed to flag. Lower values flag more aggressively; 50% is a good default."
+            value={settings.toxicityThreshold}
+            disabled={!settings.enableToxicity}
+            onChange={(value) => update({ toxicityThreshold: value }, false)}
+          />
+
+          <div className="nb-row">
+            <div className="nb-row-text">
+              <div className="nb-row-label">Hate speech</div>
+              <div className="nb-row-hint">Identity attacks and extremist language</div>
+            </div>
+          </div>
+          <Slider
+            label="Hate speech threshold"
+            hint="Independent of the overall toxicity threshold. Lower values flag more."
+            value={settings.racismThreshold}
+            disabled={!settings.enableToxicity}
+            onChange={(value) => update({ racismThreshold: value }, false)}
+          />
+
+          <div className="nb-row">
+            <div className="nb-row-text">
+              <div className="nb-row-label">Abusive profanity</div>
+              <div className="nb-row-hint">Extra check for obscene insults</div>
+            </div>
+            <Switch
+              checked={settings.enableObscene}
+              label="Filter abusive profanity"
+              disabled={!settings.enableToxicity}
+              onChange={(value) => update({ enableObscene: value })}
+            />
+          </div>
+
+          <div className="nb-row">
+            <div className="nb-row-text">
+              <div className="nb-row-label">Rage-bait &amp; bias</div>
+              <div className="nb-row-hint">
+                A supporting signal; only blocks when toxicity is also detected
+              </div>
+            </div>
+            <Switch
+              checked={settings.enableBias}
+              label="Bias filtering"
+              onChange={(value) => update({ enableBias: value })}
+            />
+          </div>
+          <Slider
+            label="Bias threshold"
+            hint="Only blocks biased text that also carries toxic signals."
+            value={settings.biasThreshold}
+            disabled={!settings.enableBias}
+            onChange={(value) => update({ biasThreshold: value }, false)}
+          />
+        </section>
+
+        <section className="nb-section">
+          <h2 className="nb-section-title" style={{ marginBottom: 8 }}>
+            Scanning
+          </h2>
+
+          <div className="nb-row">
+            <div className="nb-row-text">
+              <div className="nb-row-label">Deep scan</div>
+              <div className="nb-row-hint">
+                Checks subtitles and comments for visible videos. Slower, more thorough.
+              </div>
+            </div>
+            <Switch
+              checked={settings.deepScan}
+              label="Deep scan"
+              onChange={(value) => update({ deepScan: value })}
+            />
+          </div>
+
+          <div className="nb-field">
+            <span className="nb-label">When something is flagged</span>
+            <div className="nb-segment" role="group" aria-label="Filter mode">
+              <button
+                type="button"
+                className={settings.filterMode === "blur" ? "is-active" : ""}
+                aria-pressed={settings.filterMode === "blur"}
+                onClick={() => update({ filterMode: "blur" })}>
+                Blur with reason
+              </button>
+              <button
+                type="button"
+                className={settings.filterMode === "remove" ? "is-active" : ""}
+                aria-pressed={settings.filterMode === "remove"}
+                onClick={() => update({ filterMode: "remove" })}>
+                Hide completely
+              </button>
+            </div>
+          </div>
+
+          <div className="nb-actions">
+            <button type="button" className="nb-button" onClick={restorePage}>
+              Restore hidden items
+            </button>
+          </div>
+        </section>
+
+        <section className="nb-section">
+          <h2 className="nb-section-title" style={{ marginBottom: 8 }}>
+            Keywords &amp; exceptions
+          </h2>
+
+          <div className="nb-field">
+            <label className="nb-label" htmlFor="nb-banned">
+              Always block
+            </label>
+            <textarea
+              id="nb-banned"
+              className="nb-textarea"
+              spellCheck={false}
+              placeholder="crypto scam, gambling, spoilers"
+              value={settings.bannedKeywords}
+              onChange={(event) =>
+                update({ bannedKeywords: event.target.value }, false)
+              }
+              onBlur={() => void flush()}
+            />
+            <p className="nb-hint">Comma-separated. Matched against titles, channels and comments.</p>
+          </div>
+
+          <div className="nb-field">
+            <label className="nb-label" htmlFor="nb-exceptions">
+              Never block
+            </label>
+            <textarea
+              id="nb-exceptions"
+              className="nb-textarea"
+              spellCheck={false}
+              placeholder="Channel name, trusted keyword"
+              value={settings.exceptions}
+              onChange={(event) =>
+                update({ exceptions: event.target.value }, false)
+              }
+              onBlur={() => void flush()}
+            />
+            <p className="nb-hint">
+              Allowlists a channel or phrase. “Allow channel” on an overlay adds it here.
+            </p>
+          </div>
+        </section>
+
+        <section className="nb-section">
+          <div className="nb-section-head">
+            <h2 className="nb-section-title">Local models</h2>
+            <button
+              type="button"
+              className="nb-button"
+              disabled={preloading || modelsBusy}
+              onClick={preload}>
+              {preloading || modelsBusy ? "Loading…" : "Preload"}
+            </button>
+          </div>
+
+          <div className="nb-row">
+            <div className="nb-row-text">
+              <div className="nb-row-label">Toxicity classifier</div>
+              <div className="nb-row-hint">Runs on-device · ~120 MB</div>
+            </div>
+            {statusBadge(statuses.toxicity, statuses.progress.toxicity)}
+          </div>
+
+          <div className="nb-row">
+            <div className="nb-row-text">
+              <div className="nb-row-label">Bias classifier</div>
+              <div className="nb-row-hint">Runs on-device · ~83 MB</div>
+            </div>
+            {statusBadge(statuses.bias, statuses.progress.bias)}
+          </div>
+
+          {statuses.toxicity === "error" || statuses.bias === "error" ? (
+            <p className="nb-hint" style={{ color: "var(--danger)" }}>
+              A model failed to load. Check your connection, then press Preload to retry.
+            </p>
+          ) : (
+            <p className="nb-hint">
+              Weights download once from Hugging Face and are cached by the browser. Text never leaves your device.
+            </p>
+          )}
+        </section>
+
+        <section className="nb-section">
+          <h2 className="nb-section-title" style={{ marginBottom: 8 }}>
+            Reset
+          </h2>
+          <div className="nb-actions" style={{ marginTop: 0 }}>
+            <button type="button" className="nb-button" onClick={doResetStats}>
+              Clear counter
+            </button>
+            <button
+              type="button"
+              className="nb-button is-danger"
+              onClick={doResetSettings}>
+              Reset all settings
+            </button>
+          </div>
+        </section>
+      </div>
+
+      {toast ? (
+        <div className="nb-toast" role="status" aria-live="polite">
+          {toast}
+        </div>
+      ) : null}
+
+      <footer className="nb-footer">
+        <span>100% local inference · No account</span>
+        <span>v{version}</span>
+      </footer>
+    </main>
+  )
+}
+
+export default Popup

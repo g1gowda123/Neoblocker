@@ -6,16 +6,28 @@ import type { ExtensionSettings } from "./storage"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configure Transformers.js for an MV3 service worker:
-//   - WASM binaries are bundled locally; model weights are fetched once from
-//     Hugging Face and cached by the browser (text never leaves the device).
+//   - WASM binaries and the toxicity model are bundled locally. The optional
+//     bias model is fetched once from Hugging Face and cached by the browser.
+//     Text never leaves the device either way.
 //   - Single-threaded: MV3 workers do not have SharedArrayBuffer.
 //   - No worker proxy: nesting workers inside a service worker is unsupported.
 // ─────────────────────────────────────────────────────────────────────────────
-env.allowLocalModels = false
-env.backends.onnx.wasm.numThreads = 1
-env.backends.onnx.wasm.proxy = false
+env.allowLocalModels = true
 if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/")
+  env.localModelPath = chrome.runtime.getURL("models/")
+}
+if (env.backends.onnx?.wasm) {
+  env.backends.onnx.wasm.numThreads = 1
+  env.backends.onnx.wasm.proxy = false
+  if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
+    env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/")
+  }
+} else {
+  console.error(
+    "[Neoblocker] ONNX backend unavailable",
+    Object.keys(env.backends),
+    env.backends
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,12 +131,12 @@ function lruSet<K, V>(map: Map<K, V>, key: K, value: V, max: number) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier 1: Toxicity Classifier
-//   Model: protectai/unbiased-toxic-roberta-onnx
-//   Labels: toxicity, severe_toxicity, obscene, threat, insult,
-//           identity_attack, sexual_explicit
-//   The model is trained to avoid flagging harmless identity mentions.
+//   Model: minuva/MiniLMv2-toxic-jigsaw-onnx (22.9 MB quantized)
+//   Labels: toxic, severe_toxic, obscene, threat, insult, identity_hate
+//   Distilled MiniLM — roughly 100 MB smaller than the previous RoBERTa
+//   model and much faster to download and run.
 // ─────────────────────────────────────────────────────────────────────────────
-const TOXICITY_MODEL = "protectai/unbiased-toxic-roberta-onnx"
+const TOXICITY_MODEL = "minilm"
 const HATE_KEYWORDS = [
   "kkk",
   "white supremacist",
@@ -139,6 +151,8 @@ const HATE_REGEX = new RegExp(
   ).join("|")})`,
   "i"
 )
+const EXPLICIT_REGEX =
+  /\b(porn|pornography|nsfw|xxx|onlyfans|nudes?|explicit sex|sexual content)\b/i
 
 class ToxicityClassifier {
   private static cache = new Map<string, Promise<Record<string, number>>>()
@@ -154,7 +168,6 @@ class ToxicityClassifier {
       "text-classification",
       TOXICITY_MODEL,
       {
-        model_file_name: "../model",
         progress_callback: progressCallback("toxicity")
       }
     )
@@ -383,30 +396,29 @@ export async function analyzeContent(
     const isSafeContext = SAFE_CONTEXT_REGEX.test(cleanText)
     let modelError = false
 
-    const [toxScores, biasScore] = await Promise.all([
-      settings.enableToxicity
-        ? ToxicityClassifier.analyze(cleanText).catch((error) => {
-            console.error("[Neoblocker] Toxicity analysis failed:", error)
-            modelError = true
-            return {} as Record<string, number>
-          })
-        : Promise.resolve({} as Record<string, number>),
-      settings.enableBias && !isSafeContext && !isTitle
-        ? BiasClassifier.analyze(cleanText).catch((error) => {
-            console.error("[Neoblocker] Bias analysis failed:", error)
-            modelError = true
-            return 0
-          })
-        : Promise.resolve(0)
-    ])
+    let toxScores: Record<string, number> = {}
+    if (settings.enableToxicity) {
+      try {
+        toxScores = await ToxicityClassifier.analyze(cleanText)
+      } catch (error) {
+        console.error("[Neoblocker] Toxicity analysis failed:", error)
+        modelError = true
+      }
+    }
 
-    const toxicity = toxScores["toxicity"] || 0
-    const severeToxicity = toxScores["severe_toxicity"] || 0
+    const toxicity = toxScores["toxicity"] ?? toxScores["toxic"] ?? 0
+    const severeToxicity =
+      toxScores["severe_toxicity"] ?? toxScores["severe_toxic"] ?? 0
     const obscene = toxScores["obscene"] || 0
     const threat = toxScores["threat"] || 0
     const insult = toxScores["insult"] || 0
-    let identityAttack = toxScores["identity_attack"] || 0
-    const sexualExplicit = toxScores["sexual_explicit"] || 0
+    let identityAttack =
+      toxScores["identity_attack"] ?? toxScores["identity_hate"] ?? 0
+    const sexualExplicit =
+      toxScores["sexual_explicit"] ??
+      (!isSafeContext && EXPLICIT_REGEX.test(cleanText)
+        ? Math.max(obscene, 0.9)
+        : 0)
 
     // Explicit hate/extremist terms are a strong signal that the unbiased
     // model sometimes under-scores. Elevate identity_attack for those.
@@ -414,9 +426,28 @@ export async function analyzeContent(
       identityAttack = Math.max(identityAttack, 0.85)
     }
 
+    // The bias model is an optional second download. Only start it when the
+    // toxicity model has produced a meaningful signal, so safe pages never
+    // pay the 83 MB cost.
+    let biasScore = 0
+    if (
+      settings.enableBias &&
+      !isSafeContext &&
+      toxicity >= 0.4
+    ) {
+      try {
+        biasScore = await BiasClassifier.analyze(cleanText)
+      } catch (error) {
+        console.error("[Neoblocker] Bias analysis failed:", error)
+        modelError = true
+      }
+    }
+
     const toxicityLimit = clampThreshold(settings.toxicityThreshold, 0.5)
-    const racismLimit = clampThreshold(settings.racismThreshold, 0.25)
+    const racismLimit = clampThreshold(settings.racismThreshold, 0.15)
     const biasLimit = clampThreshold(settings.biasThreshold, 0.5)
+    const toxicityScore =
+      toxicity * 0.4 + insult * 0.3 + severeToxicity * 0.3
 
     // ── Pass one: fast title scan ────────────────────────────────────────────
     if (isTitle) {
@@ -448,7 +479,25 @@ export async function analyzeContent(
             reason: "Hostile / Harassing Content (Title)"
           }
         }
+
+        if (
+          toxicityScore >=
+          Math.min(toxicityLimit + 0.15, 0.8)
+        ) {
+          return {
+            action: "LOCAL_BLOCK",
+            reason: "Toxic / Hostile Content (Title)"
+          }
+        }
       }
+
+      if (biasScore >= biasLimit) {
+        return {
+          action: "LOCAL_BLOCK",
+          reason: "Rage-Bait / Clickbait Content (Title)"
+        }
+      }
+
       return modelError
         ? { action: "SAFE", error: "Model unavailable" }
         : { action: "SAFE" }
@@ -463,13 +512,19 @@ export async function analyzeContent(
         return { action: "LOCAL_BLOCK", reason: "Explicit Content" }
       }
 
-      // Positivity buffer: a mild identity score without hostile signals is
-      // often a documentary/educational sentence, so let it through.
+      // A mild identity score without hostile signals is often a
+      // documentary/educational sentence, so let it through. Strong overall
+      // toxicity is enough to treat a mid-range identity score as hostile;
+      // this catches statements like "those people are ruining everything"
+      // that the compact model scores below its explicit-hate range.
       let blockIdentity = false
-      if (identityAttack >= racismLimit) {
-        if (identityAttack <= 0.5) {
-          if (severeToxicity >= 0.1 || insult >= 0.2) blockIdentity = true
-        } else {
+      if (!isSafeContext && identityAttack >= racismLimit) {
+        if (
+          identityAttack > 0.5 ||
+          toxicity >= Math.max(0.5, toxicityLimit) ||
+          severeToxicity >= 0.1 ||
+          insult >= 0.2
+        ) {
           blockIdentity = true
         }
       }
@@ -486,8 +541,6 @@ export async function analyzeContent(
         return { action: "LOCAL_BLOCK", reason: "Abusive Harassment" }
       }
 
-      const toxicityScore =
-        toxicity * 0.4 + insult * 0.3 + severeToxicity * 0.3
       if (toxicityScore >= toxicityLimit) {
         return { action: "LOCAL_BLOCK", reason: "Toxic / Hostile Content" }
       }

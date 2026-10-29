@@ -10,11 +10,11 @@ Neoblocker is a Manifest V3 browser extension built with Plasmo. React is used o
 
 Inference runs on-device with Transformers.js and WebAssembly:
 
-1. **Toxicity classifier** — `protectai/unbiased-toxic-roberta-onnx` detects toxicity, severe toxicity, obscenity, threats, insults, identity attacks, and explicit content.
-2. **Bias classifier** — `protectai/distilroberta-bias-onnx` provides a supporting bias/rage-bait signal. It is not a standalone political-opinion filter.
+1. **Toxicity classifier** — a bundled 23 MB int8 MiniLM (`minuva/MiniLMv2-toxic-jigsaw-onnx`) detects toxicity, severe toxicity, obscenity, threats, insults, and identity hate. The ONNX file has unused training/backend opset imports stripped so it runs under the bundled ORT 1.14; see `assets/models/minilm/NOTICE.md`.
+2. **Bias classifier** — optional `protectai/distilroberta-bias-onnx` provides a supporting bias/rage-bait signal. It is off by default, downloads only when enabled and toxicity is already present, and is not a standalone political-opinion filter.
 3. **Rules** — user keyword lists and exceptions are checked before ML; a safe-context buffer reduces false positives.
 
-Model weights are **downloaded once from Hugging Face and cached by the browser**. Do not claim the extension is fully offline on first use. After weights are cached, inference works offline. No inference API or telemetry is permitted.
+The toxicity model is bundled, so a default install performs **no model download**. The optional bias model downloads once from Hugging Face and is cached by the browser. Do not claim the extension is fully offline when bias is enabled on first use. No inference API or telemetry is permitted.
 
 ## Boundaries
 

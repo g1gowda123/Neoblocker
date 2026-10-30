@@ -86,6 +86,26 @@ function Slider({
   )
 }
 
+function Logo({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 2.5 20 6v5.4c0 5-3.4 8.7-8 10.1-4.6-1.4-8-5.1-8-10.1V6l8-3.5Z"
+        fill="#f5f3ff"
+        stroke="#ddd6fe"
+        strokeWidth="1"
+      />
+      <path
+        d="M9.2 12.1l1.9 1.9 3.9-4"
+        stroke="#6d28d9"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function statusBadge(state: ModelState, progress: number) {
   switch (state) {
     case "loaded":
@@ -291,7 +311,9 @@ function Popup() {
     return (
       <main className="nb-app" data-theme="dark">
         <div className="nb-header">
-          <div className="nb-logo">🛡️</div>
+          <div className="nb-logo">
+            <Logo />
+          </div>
           <div>
             <h1 className="nb-title">Neoblocker</h1>
             <p className="nb-subtitle">Local AI content filter</p>
@@ -319,22 +341,8 @@ function Popup() {
   return (
     <main className="nb-app" data-theme={settings.theme}>
       <header className="nb-header">
-        <div className="nb-logo" aria-hidden="true">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M12 2.5 20 6v5.4c0 5-3.4 8.7-8 10.1-4.6-1.4-8-5.1-8-10.1V6l8-3.5Z"
-              fill="#f5f3ff"
-              stroke="#ddd6fe"
-              strokeWidth="1"
-            />
-            <path
-              d="M9.2 12.1l1.9 1.9 3.9-4"
-              stroke="#6d28d9"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+        <div className="nb-logo">
+          <Logo />
         </div>
         <div>
           <h1 className="nb-title">Neoblocker</h1>
@@ -343,13 +351,17 @@ function Popup() {
         <div className="nb-header-actions">
           <button
             type="button"
-            className="nb-icon-button"
-            title="Toggle theme"
+            className="nb-icon-button is-wide"
+            title={
+              settings.theme === "dark"
+                ? "Switch to light theme"
+                : "Switch to dark theme"
+            }
             aria-label="Toggle light or dark theme"
             onClick={() =>
               update({ theme: settings.theme === "dark" ? "light" : "dark" })
             }>
-            {settings.theme === "dark" ? "☀" : "☾"}
+            {settings.theme === "dark" ? "Light" : "Dark"}
           </button>
           <button
             type="button"
@@ -405,7 +417,7 @@ function Popup() {
           <div className="nb-row">
             <div className="nb-row-text">
               <div className="nb-row-label">Toxicity &amp; hate speech</div>
-              <div className="nb-row-hint">Threats, harassment, explicit abuse</div>
+              <div className="nb-row-hint">Threats, harassment, and abuse</div>
             </div>
             <Switch
               checked={settings.enableToxicity}
@@ -486,7 +498,8 @@ function Popup() {
             <div className="nb-row-text">
               <div className="nb-row-label">Deep scan</div>
               <div className="nb-row-hint">
-                Checks subtitles and comments for visible videos. Slower, more thorough.
+                Off by default. Fetches the watch page and subtitles for cards
+                that stay in view.
               </div>
             </div>
             <Switch
@@ -495,6 +508,13 @@ function Popup() {
               onChange={(value) => update({ deepScan: value })}
             />
           </div>
+
+          {settings.deepScan ? (
+            <p className="nb-hint is-warning">
+              Deep scan downloads roughly 140 KB per video after it stays in
+              view. Leave it off on metered connections.
+            </p>
+          ) : null}
 
           <div className="nb-field">
             <span className="nb-label">When something is flagged</span>

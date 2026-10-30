@@ -14,8 +14,10 @@ export interface ExtensionSettings {
   racismThreshold: number
   filterMode: "blur" | "remove"
   bannedKeywords: string
-  /** Fetch subtitles/comments for videos that scroll into view. */
+  /** Opt-in: fetch watch pages and subtitles for cards that stay in view. */
   deepScan: boolean
+  /** Internal schema marker. Version 2 migrated deep scan to opt-in. */
+  settingsVersion: number
 }
 
 export interface FilterStats {
@@ -39,7 +41,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   racismThreshold: 0.15,
   filterMode: "blur",
   bannedKeywords: "",
-  deepScan: true
+  deepScan: false,
+  settingsVersion: 2
 }
 
 const clamp = (value: unknown, min: number, max: number, fallback: number) => {
@@ -60,13 +63,27 @@ export function sanitizeSettings(value: unknown): ExtensionSettings {
     string,
     unknown
   >
+  const enableToxicity = bool(
+    raw.enableToxicity,
+    DEFAULT_SETTINGS.enableToxicity
+  )
+  const storedVersion =
+    typeof raw.settingsVersion === "number" &&
+    Number.isFinite(raw.settingsVersion)
+      ? raw.settingsVersion
+      : 1
+  // Version 1 shipped with deep scan on. Force it off once on upgrade so
+  // existing users do not keep paying the home-screen data cost silently.
+  const deepScan =
+    storedVersion >= 2
+      ? bool(raw.deepScan, DEFAULT_SETTINGS.deepScan)
+      : false
+
   return {
     enabled: bool(raw.enabled, DEFAULT_SETTINGS.enabled),
-    enableToxicity: bool(
-      raw.enableToxicity,
-      DEFAULT_SETTINGS.enableToxicity
-    ),
-    enableBias: bool(raw.enableBias, DEFAULT_SETTINGS.enableBias),
+    enableToxicity,
+    enableBias:
+      enableToxicity && bool(raw.enableBias, DEFAULT_SETTINGS.enableBias),
     toxicityThreshold: clamp(
       raw.toxicityThreshold,
       0.05,
@@ -90,7 +107,8 @@ export function sanitizeSettings(value: unknown): ExtensionSettings {
     ),
     filterMode: raw.filterMode === "remove" ? "remove" : "blur",
     bannedKeywords: text(raw.bannedKeywords),
-    deepScan: bool(raw.deepScan, DEFAULT_SETTINGS.deepScan)
+    deepScan,
+    settingsVersion: 2
   }
 }
 
@@ -182,6 +200,32 @@ export function saveSettings(
 
 export async function resetSettings(): Promise<ExtensionSettings> {
   await saveSettings({ ...DEFAULT_SETTINGS })
+  return getSettings()
+}
+
+/**
+ * Persist the sanitized settings once after an upgrade. Reads still sanitize
+ * immediately, but writing the current schema back makes the migration
+ * explicit and avoids re-checking the old shape on every load.
+ */
+export async function ensureSettingsCurrent(): Promise<ExtensionSettings> {
+  const settings = await getSettings()
+  const stored = await new Promise<unknown>((resolve) => {
+    try {
+      chrome.storage.local.get(SETTINGS_KEY, (result) =>
+        resolve(result?.[SETTINGS_KEY])
+      )
+    } catch {
+      resolve(undefined)
+    }
+  })
+  const version =
+    stored && typeof stored === "object"
+      ? (stored as Record<string, unknown>).settingsVersion
+      : undefined
+  if (typeof version !== "number" || version < 2) {
+    await saveSettings({ ...settings })
+  }
   return getSettings()
 }
 

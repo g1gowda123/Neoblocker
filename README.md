@@ -38,12 +38,12 @@ The toxicity model is bundled with the extension, so filtering works out of the 
 - **Compact bundled model** — a 23 MB int8 toxicity/hate-speech classifier runs locally via Transformers.js and WebAssembly, with no first-run download.
 - **Optional bias model** — adds an ~83 MB bias/rage-bait classifier only if you turn it on.
 - **Fast title pass** — scans video titles as cards render, without waiting for a full page load.
-- **Optional deep scan** — checks subtitles and comments for visible videos, capped at two concurrent requests.
+- **Optional deep scan** — checks the title, description, and subtitles of cards that stay in view, capped at two concurrent requests. Off by default to keep home-screen data use at zero.
 - **Your call on every block** — **Show anyway** reveals a single item for the tab session; **Allow channel** adds the channel to your exceptions.
 - **Blur or hide** — blur with a reason, or remove flagged items from the page entirely.
 - **Keyword rules** — always-block and never-block lists, matched against titles, channels, and comments.
 - **Useful controls** — master pause switch, threshold sliders, per-model status, one-click model preload, daily filtered counter, and a badge on the toolbar icon.
-- **Private by design** — settings and counts live in `chrome.storage.local`; the only network requests are to YouTube (page/subtitles/comments) and, only if you enable the optional bias model, Hugging Face (model weights).
+- **Private by design** — settings and counts live in `chrome.storage.local`; the only network requests are to YouTube (watch pages and subtitles, only when deep scan is on) and, only if you enable the optional bias model, Hugging Face (model weights).
 - **Accessible popup** — keyboard-friendly switches, labelled controls, light/dark themes, and a scrollable 360 px layout.
 
 ## Install
@@ -87,7 +87,7 @@ The toxicity classifier ships inside the extension, so the default filter works 
 
 The optional bias model is **off by default**. Enable **Rage-bait & bias** in the popup to download it on first use; it is cached afterwards. The popup shows progress and a **Preload** button for enabled models. If an optional download fails, check your connection and press **Preload** again.
 
-Deep scan is the only feature that fetches extra YouTube data (the watch page, subtitles, and a sample of comments). Title and comment scanning on the page itself works without those requests.
+Deep scan is the only feature that fetches extra YouTube data. It is **off by default**: title and on-page comment scanning make no additional requests beyond what YouTube already loaded. When enabled, a card must stay in the actual viewport for about 1.5 seconds before Neoblocker fetches its watch page and subtitles; comments are never fetched for deep scan. The measured cost is roughly 140 KB per video, with at most two requests in flight. In a 20-card results page, leaving deep scan off produced zero extension requests; scrolling two screens with it on fetched eight watch pages, about 1.1 MB in total.
 
 ## How it works
 
@@ -125,8 +125,8 @@ Deep scan is the only feature that fetches extra YouTube data (the watch page, s
 
 1. **Exceptions** are checked first; matching text is always allowed.
 2. **Banned keywords** are checked next; matching cards/comments are always blocked.
-3. **Titles** get a fast toxicity pass with stricter gates for explicit content, threats, hate speech, and severe insults.
-4. **Comments and deep scans** use the full gate set, including a positivity/context buffer so documentaries and educational discussions are not blocked for merely mentioning a sensitive topic.
+3. **Titles** get a fast toxicity pass with stricter gates for threats, hate speech, and severe insults.
+4. **Comments and deep scans** use the full gate set, including a positivity/context buffer so documentaries and educational discussions are not blocked for merely mentioning a sensitive topic. Sexual content is not filtered; use YouTube's own 18+ restriction for that.
 5. **Bias** is optional and only used as a supporting signal alongside toxic tone, which keeps rage-bait detection from turning into a generic opinion filter.
 
 Thresholds are clamped to 5–95% and interpreted as **minimum confidence to block**. Lower values are stricter.
@@ -142,7 +142,7 @@ Thresholds are clamped to 5–95% and interpreted as **minimum confidence to blo
 | **Abusive profanity** | Extra obscene-insult check. |
 | **Rage-bait & bias** | Optional ~83 MB bias model; only blocks biased text with toxic signals. Off by default. |
 | **Bias threshold** | Confidence threshold for the bias/rage-bait signal. |
-| **Deep scan** | Fetches subtitles and sampled comments for visible videos. Turn off for maximum performance. |
+| **Deep scan** | Off by default. Fetches the watch page and subtitles for cards that stay in view. Leave off on metered connections. |
 | **Filter mode** | **Blur with reason** or **Hide completely**. |
 | **Always block / Never block** | Comma-separated keyword lists. Matching is case-insensitive substring matching. |
 | **Restore hidden items** | Reveals everything currently filtered on the active YouTube tab for this session. |
@@ -199,7 +199,7 @@ Detection gates live in `analyzeContent()` in `src/utils/ai-router.ts`. Add a un
 Neoblocker requests only:
 
 - `storage` — save settings and the local daily counter.
-- `https://youtube.com/*` and `https://*.youtube.com/*` — run the content script and fetch watch pages/subtitles/comments for deep scan.
+- `https://youtube.com/*` and `https://*.youtube.com/*` — run the content script and, when deep scan is enabled, fetch watch pages and subtitles.
 - `https://huggingface.co/*`, `https://*.huggingface.co/*`, `https://*.hf.co/*` — download the optional bias model weights when you enable it.
 
 There is no `tabs`, `history`, `cookies`, or `<all_urls>` permission. The extension does not read or transmit pages other than YouTube, does not use cookies or credentials for its fetches, and does not include analytics or remote code. Reveal choices are stored in `sessionStorage` for the current tab session; settings and the daily count are stored in `chrome.storage.local`.
@@ -207,11 +207,11 @@ There is no `tabs`, `history`, `cookies`, or `<all_urls>` permission. The extens
 ## Limitations
 
 - The bundled classifier is trained primarily on English text. Other languages may be under-filtered.
-- The compact toxicity model has no dedicated sexual-content label; an explicit-term heuristic covers common cases, but it is less precise than the previous 120 MB model.
+- Neoblocker does not filter sexual content. YouTube already provides an account-level 18+ restriction that is more reliable than a text classifier.
 - The optional bias model is larger (~83 MB) and is off by default to keep installation and first-run bandwidth small.
 - This is a heuristic content filter, not a parental-control or security boundary. Do not rely on it as the only safeguard for a child or a shared device.
 - YouTube changes its DOM regularly. If cards stop being recognized, open an issue with the browser version and a screenshot.
-- Deep scan fetches public video text from YouTube; it adds latency and network usage. It is limited to visible cards and two concurrent requests.
+- Deep scan is opt-in because it fetches public video text from YouTube and adds latency and network usage. It waits for a viewport dwell, never fetches offscreen cards, and is limited to two concurrent requests.
 - The bundled model loads locally in well under a second. The optional bias model downloads ~83 MB on first use; the UI reports progress and allows retries.
 
 ## Troubleshooting
@@ -220,7 +220,7 @@ There is no `tabs`, `history`, `cookies`, or `<all_urls>` permission. The extens
 | --- | --- |
 | Nothing is filtered | Check that **Protection** is on and the page was reloaded after installing. Open the popup on a YouTube tab. |
 | "Model unavailable" / model error | The bundled toxicity model should load offline; reload the extension. If the optional bias model is enabled, check your connection, press **Preload**, and retry. |
-| Deep scan never finishes | Turn off deep scan or try a shorter video. Subtitle/comment availability varies by video. |
+| Deep scan never finishes | Turn it off or try a shorter video. Subtitle availability varies by video. |
 | Popup says "Open a YouTube tab first" | The restore action needs an active YouTube tab running the content script. Reload that tab after updating the extension. |
 | Stale UI after an update | Reload the extension in `chrome://extensions`, then reload YouTube. |
 

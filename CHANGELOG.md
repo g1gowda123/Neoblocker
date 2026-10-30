@@ -2,6 +2,20 @@
 
 All notable changes to Neoblocker are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Deep scan is now **off by default** and only runs for cards that stay in the actual viewport for about 1.5 seconds. Existing settings are migrated once so the old always-on behavior does not silently continue after upgrading.
+- Deep scan no longer fetches comments. It uses the video title, channel, description, and subtitles only; on-page comments are still filtered by the content script.
+- Removed sexual-content filtering. YouTube's own 18+ restriction handles that more reliably; toxicity, hate speech, threats, harassment, and abuse filtering remain.
+- Replaced emoji controls and placeholders with plain text so the popup reads as a normal utility.
+
+### Removed
+
+- The compact-model explicit-term heuristic and the `Explicit Content` result reasons.
+- InnerTube comment-fetch code, API-key/continuation validation that is no longer needed, and the extra request budget it used.
+
 ## [1.2.0] — 2026-10-29
 
 A leaner, faster default build. The toxicity classifier is now bundled, the optional bias model is lazy and off by default, and first-run model bandwidth drops from roughly 208 MB to zero.

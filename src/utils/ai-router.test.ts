@@ -170,15 +170,14 @@ describe("analyzeContent", () => {
     expect(result.reason).toContain("Hate Speech")
   })
 
-  it("uses the explicit-term fallback for titles without a sexual_explicit label", async () => {
+  it("does not block explicit wording on its own", async () => {
     const result = await analyzeContent(
       "Porn stars reveal their secrets",
       settings(),
       true
     )
 
-    expect(result.action).toBe("LOCAL_BLOCK")
-    expect(result.reason).toContain("Explicit")
+    expect(result.action).toBe("SAFE")
   })
 
   it("returns an error instead of SAFE when a model cannot load", async () => {

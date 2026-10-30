@@ -129,6 +129,16 @@ body {
   background: var(--panel-strong);
 }
 
+.nb-icon-button.is-wide {
+  width: auto;
+  min-width: 46px;
+  padding: 0 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .nb-section {
   border: 1px solid var(--border);
   background: var(--panel);
@@ -356,6 +366,20 @@ body {
   color: var(--muted);
   line-height: 1.35;
   margin: 4px 0 0;
+}
+
+.nb-hint.is-warning {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  border-radius: 8px;
+  padding: 7px 8px;
+}
+
+.nb-app[data-theme="light"] .nb-hint.is-warning {
+  color: #92400e;
+  background: rgba(180, 83, 9, 0.08);
+  border-color: rgba(180, 83, 9, 0.18);
 }
 
 .nb-input,

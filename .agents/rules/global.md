@@ -18,14 +18,14 @@ The toxicity model is bundled, so a default install performs **no model download
 
 ## Boundaries
 
-- `src/contents/content-observer.ts` observes the YouTube DOM, extracts titles/channels/comments, applies overlays, and persists per-tab reveal choices in `sessionStorage`.
+- `src/contents/content-observer.ts` observes the YouTube DOM, extracts titles/channels/comments, applies overlays, and persists per-tab reveal choices in `sessionStorage`. Deep scan is opt-in and only runs for cards after a viewport dwell; it fetches the watch page and subtitles, never comments.
 - `src/background.ts` owns message validation, the network boundary, model execution, caches, stats, and the toolbar badge.
 - `src/utils/ai-router.ts` serializes inference and owns decision gates. Keep thresholds tested.
 - `src/utils/storage.ts` serializes writes and sanitizes settings/stats.
 
 ## Security and privacy rules
 
-- Treat content-script messages as untrusted: validate action names, video IDs, lengths, and InnerTube parameters; never return raw exception details.
+- Treat content-script messages as untrusted: validate action names, video IDs, and lengths; never return raw exception details.
 - Validate URLs extracted from YouTube HTML before fetching. Only HTTPS YouTube/googlevideo hosts are allowed for subtitles.
 - Every network request needs a timeout and an output-size bound.
 - Keep host permissions limited to YouTube and model-download hosts. No analytics, remote code, cookies, tabs, or history permissions.

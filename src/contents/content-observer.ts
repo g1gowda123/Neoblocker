@@ -50,6 +50,7 @@ const MAX_REVEALED = 500
 const MAX_TEXT_CACHE = 300
 const TEXT_CACHE_TTL = 30 * 60 * 1000
 const MAX_CONCURRENT_DEEP = 2
+const DEEP_DWELL_MS = 1_500
 
 type ItemKind = "card" | "comment"
 type BlockResult = {
@@ -67,6 +68,7 @@ let settings: ExtensionSettings | null = null
 let lastUrl = location.href
 let scanTimer: ReturnType<typeof setTimeout> | null = null
 let observer: IntersectionObserver | null = null
+let deepObserver: IntersectionObserver | null = null
 let mutationObserver: MutationObserver | null = null
 let urlPollTimer: ReturnType<typeof setInterval> | null = null
 let rescanTimer: ReturnType<typeof setInterval> | null = null
@@ -83,6 +85,8 @@ const deepDone = new Set<string>()
 const deepPending = new Set<string>()
 const deepBlockedReasons = new Map<string, string>()
 const visibleItems = new Set<Element>()
+const deepVisible = new Set<Element>()
+const deepTimers = new Map<Element, ReturnType<typeof setTimeout>>()
 let activeDeep = 0
 const deepQueue: Array<() => void> = []
 let destroyed = false
@@ -588,6 +592,7 @@ function enqueueDeep(task: () => Promise<void>) {
 function maybeDeepScan(el: Element) {
   if (!settings?.enabled || !settings.deepScan || !settings.enableToxicity) return
   if (el.getAttribute("data-neoblocker-blocked") === "true") return
+  if (cardIsRevealed(el)) return
 
   const videoId = getVideoId(el)
   if (!isValidVideoId(videoId)) return
@@ -631,6 +636,50 @@ function maybeDeepScan(el: Element) {
   })
 }
 
+// Deep scan is intentionally stricter than the normal viewport observer. It
+// waits for a card to stay in the actual viewport before spending a watch-page
+// request, so scrolling past a shelf does not fetch everything in it.
+function clearDeepTimer(el: Element) {
+  const timer = deepTimers.get(el)
+  if (timer) clearTimeout(timer)
+  deepTimers.delete(el)
+}
+
+function resetDeepObservation() {
+  deepObserver?.disconnect()
+  deepObserver = null
+  deepVisible.clear()
+  for (const timer of deepTimers.values()) clearTimeout(timer)
+  deepTimers.clear()
+}
+
+function ensureDeepObserver() {
+  if (deepObserver) return
+  deepObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const el = entry.target
+        if (itemKinds.get(el) !== "card") continue
+        if (!entry.isIntersecting) {
+          deepVisible.delete(el)
+          clearDeepTimer(el)
+          continue
+        }
+
+        deepVisible.add(el)
+        if (deepTimers.has(el)) continue
+
+        const timer = setTimeout(() => {
+          deepTimers.delete(el)
+          if (deepVisible.has(el) && el.isConnected) maybeDeepScan(el)
+        }, DEEP_DWELL_MS)
+        deepTimers.set(el, timer)
+      }
+    },
+    { rootMargin: "0px", threshold: 0.25 }
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Scanning / observation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -671,12 +720,7 @@ function ensureObserver() {
         }
         visibleItems.add(el)
         const kind = itemKinds.get(el) || "card"
-        if (kind === "card") {
-          void processItem(el, "card")
-          maybeDeepScan(el)
-        } else {
-          void processItem(el, "comment")
-        }
+        void processItem(el, kind)
       }
     },
     { rootMargin: "400px 0px", threshold: 0.01 }
@@ -688,6 +732,7 @@ function scanPage(force = false) {
   injectPageStyle()
   if (settings !== null && !settings.enabled && !force) return
   ensureObserver()
+  ensureDeepObserver()
 
   if (force) {
     processedKeys = new WeakMap()
@@ -706,6 +751,7 @@ function scanPage(force = false) {
       trackedItems.add(el)
       itemKinds.set(el, kind)
       observer?.observe(el)
+      if (kind === "card") deepObserver?.observe(el)
       // Schedule both cards and comments: comments often render their text
       // after the element has been observed for the first time.
       scheduleItem(el, kind, 0)
@@ -729,7 +775,16 @@ function scanPage(force = false) {
     // bodies that arrived after the initial IntersectionObserver callback.
     if (visibleItems.has(el)) {
       void processItem(el, kind)
-      if (kind === "card") maybeDeepScan(el)
+      // Deep scan runs only after the stricter observer's dwell timer. If the
+      // timer is still pending, leave it alone: otherwise a 4s rescan would
+      // bypass the dwell and fetch cards the moment they appear.
+      if (
+        kind === "card" &&
+        deepVisible.has(el) &&
+        !deepTimers.has(el)
+      ) {
+        maybeDeepScan(el)
+      }
     }
   }
 
@@ -737,6 +792,9 @@ function scanPage(force = false) {
     if (!live.has(el) && !el.isConnected) {
       trackedItems.delete(el)
       observer?.unobserve(el)
+      deepObserver?.unobserve(el)
+      deepVisible.delete(el)
+      clearDeepTimer(el)
     }
   }
 }
@@ -764,6 +822,7 @@ function handleUrlChange() {
   deepBlockedReasons.clear()
   observer?.disconnect()
   observer = null
+  resetDeepObservation()
   injectPageStyle()
   scheduleScan(350)
 }
@@ -775,6 +834,7 @@ function teardown() {
   if (rescanTimer) clearInterval(rescanTimer)
   mutationObserver?.disconnect()
   observer?.disconnect()
+  resetDeepObservation()
 }
 
 function start() {

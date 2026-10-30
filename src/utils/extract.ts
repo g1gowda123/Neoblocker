@@ -100,19 +100,6 @@ export function isTrustedYouTubeUrl(value: string): boolean {
   }
 }
 
-export function isSafeInnerTubeKey(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9_-]{10,128}$/.test(value)
-}
-
-export function isSafeContinuationToken(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= 4096 &&
-    /^[A-Za-z0-9_%=.\-]+$/.test(value)
-  )
-}
-
 /**
  * Return at most `limit` characters sampled from the start, middle and end of
  * a long transcript. Classifiers only read the first few hundred tokens, so

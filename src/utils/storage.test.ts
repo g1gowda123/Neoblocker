@@ -32,6 +32,13 @@ describe("sanitizeSettings", () => {
     })
   })
 
+  it("forces deep scan off for settings saved before the data-saving migration", () => {
+    expect(sanitizeSettings({ deepScan: true }).deepScan).toBe(false)
+    expect(
+      sanitizeSettings({ deepScan: true, settingsVersion: 2 }).deepScan
+    ).toBe(true)
+  })
+
   it("keeps valid values", () => {
     const result = sanitizeSettings({
       enabled: false,

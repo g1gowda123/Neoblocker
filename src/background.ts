@@ -2,14 +2,13 @@ import { analyzeContent, applyModelSettings, getModelStatuses, warmupModels } fr
 import {
   decodeHtmlEntities,
   extractJsonBlock,
-  isSafeContinuationToken,
-  isSafeInnerTubeKey,
   isTrustedYouTubeUrl,
   isValidVideoId,
   sampleText
 } from "~utils/extract"
 import {
   addBlockedCount,
+  ensureSettingsCurrent,
   getSettings,
   getStats,
   STATS_KEY,
@@ -18,7 +17,6 @@ import {
 
 const WATCH_FETCH_TIMEOUT = 12_000
 const SUBTITLE_FETCH_TIMEOUT = 8_000
-const COMMENTS_FETCH_TIMEOUT = 10_000
 const CACHE_TTL = 30 * 60 * 1000
 const CACHE_MAX = 100
 
@@ -141,72 +139,6 @@ async function extractSubtitleText(
   return text || null
 }
 
-function findContinuationToken(html: string): string | null {
-  const match = /"continuationCommand":\{"token":"([^"]+)"/.exec(html)
-  if (!match) return null
-  const token = match[1]
-  return isSafeContinuationToken(token) ? token : null
-}
-
-function findInnerTubeKey(html: string): string | null {
-  const match = /"INNERTUBE_API_KEY":"([^"]+)"/.exec(html)
-  if (!match) return null
-  return isSafeInnerTubeKey(match[1]) ? match[1] : null
-}
-
-async function fetchComments(
-  html: string
-): Promise<string | null> {
-  const apiKey = findInnerTubeKey(html)
-  const token = findContinuationToken(html)
-  if (!apiKey || !token) return null
-
-  try {
-    const response = await fetchWithTimeout(
-      `https://www.youtube.com/youtubei/v1/next?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        credentials: "omit",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept-Language": "en-US,en;q=0.9"
-        },
-        body: JSON.stringify({
-          context: {
-            client: {
-              clientName: "WEB",
-              clientVersion: "2.20240308.00.00"
-            }
-          },
-          continuation: token
-        })
-      },
-      COMMENTS_FETCH_TIMEOUT
-    )
-    if (!response.ok) return null
-
-    const data = await response.json()
-    const mutations =
-      data?.frameworkUpdates?.entityBatchUpdate?.mutations || []
-    const comments: string[] = []
-
-    for (const mutation of mutations) {
-      const content =
-        mutation?.payload?.commentEntityPayload?.properties?.content?.content
-      if (typeof content === "string") {
-        const clean = decodeHtmlEntities(content).replace(/\s+/g, " ").trim()
-        if (clean.length > 4) comments.push(clean)
-      }
-      if (comments.length >= 120) break
-    }
-
-    return comments.length ? sampleText(comments.join(" "), 5000) : null
-  } catch (error) {
-    console.warn("[Neoblocker] Comment fetch failed:", error)
-    return null
-  }
-}
-
 interface VideoData {
   text: string
   title: string
@@ -228,12 +160,16 @@ async function fetchVideoData(videoId: string): Promise<VideoData> {
 
   const details = playerResponse?.videoDetails || {}
   const title =
-    typeof details.title === "string" ? details.title.trim() : "Unknown Title"
+    typeof details.title === "string"
+      ? decodeHtmlEntities(details.title).trim()
+      : "Unknown Title"
   const channel =
-    typeof details.author === "string" ? details.author.trim() : "Unknown"
+    typeof details.author === "string"
+      ? decodeHtmlEntities(details.author).trim()
+      : "Unknown"
   const description =
     typeof details.shortDescription === "string"
-      ? details.shortDescription.slice(0, 600)
+      ? decodeHtmlEntities(details.shortDescription).slice(0, 600)
       : ""
 
   let subtitleText: string | null = null
@@ -243,14 +179,11 @@ async function fetchVideoData(videoId: string): Promise<VideoData> {
     console.warn("[Neoblocker] Subtitle fetch failed:", error)
   }
 
-  const commentText = await fetchComments(html)
-
   const sections: string[] = []
   if (title && title !== "Unknown Title") sections.push(`Title: ${title}`)
   sections.push(`Channel: ${channel}`)
   if (description) sections.push(`Description: ${description}`)
   if (subtitleText) sections.push(`Subtitles: ${sampleText(subtitleText, 5000)}`)
-  if (commentText) sections.push(`Comments: ${commentText}`)
 
   return { text: sections.join("\n"), title }
 }
@@ -395,6 +328,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
 
   if (!changes.neoblocker_settings) return
+  // Persist the one-time schema migration even if it was triggered by an old
+  // settings object arriving from another context.
+  if (
+    typeof changes.neoblocker_settings.newValue?.settingsVersion !== "number"
+  ) {
+    void ensureSettingsCurrent()
+  }
   // Deep-scan results depend on thresholds and enabled models; never serve a
   // result produced under the previous configuration.
   videoAnalysisCache.clear()
@@ -414,14 +354,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     .catch((error) => console.warn("[Neoblocker] Settings update failed:", error))
 })
 
-chrome.runtime.onInstalled.addListener(() => {
-  void getSettings()
+function applyStoredSettings() {
+  void ensureSettingsCurrent()
+    .then((settings) => {
+      applyModelSettings(settings)
+    })
+    .catch((error) =>
+      console.warn("[Neoblocker] Settings migration failed:", error)
+    )
   void refreshBadge()
-})
+}
 
-chrome.runtime.onStartup.addListener(() => {
-  void getSettings()
-  void refreshBadge()
-})
+chrome.runtime.onInstalled.addListener(applyStoredSettings)
+chrome.runtime.onStartup.addListener(applyStoredSettings)
 
-void refreshBadge()
+applyStoredSettings()

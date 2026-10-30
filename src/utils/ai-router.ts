@@ -151,8 +151,6 @@ const HATE_REGEX = new RegExp(
   ).join("|")})`,
   "i"
 )
-const EXPLICIT_REGEX =
-  /\b(porn|pornography|nsfw|xxx|onlyfans|nudes?|explicit sex|sexual content)\b/i
 
 class ToxicityClassifier {
   private static cache = new Map<string, Promise<Record<string, number>>>()
@@ -414,13 +412,8 @@ export async function analyzeContent(
     const insult = toxScores["insult"] || 0
     let identityAttack =
       toxScores["identity_attack"] ?? toxScores["identity_hate"] ?? 0
-    const sexualExplicit =
-      toxScores["sexual_explicit"] ??
-      (!isSafeContext && EXPLICIT_REGEX.test(cleanText)
-        ? Math.max(obscene, 0.9)
-        : 0)
 
-    // Explicit hate/extremist terms are a strong signal that the unbiased
+    // Explicit hate/extremist terms are a strong signal that the compact
     // model sometimes under-scores. Elevate identity_attack for those.
     if (settings.enableToxicity && HATE_REGEX.test(cleanText)) {
       identityAttack = Math.max(identityAttack, 0.85)
@@ -452,9 +445,6 @@ export async function analyzeContent(
     // ── Pass one: fast title scan ────────────────────────────────────────────
     if (isTitle) {
       if (settings.enableToxicity) {
-        if (sexualExplicit >= 0.85) {
-          return { action: "LOCAL_BLOCK", reason: "Explicit Content (Title)" }
-        }
         if (threat >= 0.8) {
           return { action: "LOCAL_BLOCK", reason: "Threats & Violence (Title)" }
         }
@@ -503,13 +493,10 @@ export async function analyzeContent(
         : { action: "SAFE" }
     }
 
-    // ── Pass two: deep scan (subtitles and comments) ─────────────────────────
+    // ── Pass two: deep scan (title, description, subtitles) ──────────────────
     if (settings.enableToxicity) {
       if (threat >= 0.35) {
         return { action: "LOCAL_BLOCK", reason: "Threats & Violence" }
-      }
-      if (sexualExplicit >= 0.75) {
-        return { action: "LOCAL_BLOCK", reason: "Explicit Content" }
       }
 
       // A mild identity score without hostile signals is often a
